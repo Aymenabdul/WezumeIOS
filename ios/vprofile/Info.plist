@@ -40,8 +40,8 @@
 				<true/>
 				<key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
 				<true/>
-				<key>NSTemporaryExceptionMinimumTLSVersion</key>
-				<string>TLSv1.2</string>
+        <key>ITSAppUsesNonExemptEncryption</key>
+        <false/>
 			</dict>
 		</dict>
 	</dict>
@@ -50,7 +50,7 @@
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>We need access to your documents folder for saving files.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+  <string>We need access to your location to share location-based profile views.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>We need access to your microphone for recording audio.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -59,6 +59,10 @@
 	<string>We need access to your photos for saving and accessing media.</string>
 	<key>NSUserNotificationUsageDescription</key>
 	<string>We need permission to send you notifications for updates and alerts.</string>
+  <key>NSAppleMusicUsageDescription</key>
+  <string>We need access to your music library to enhance your profile video.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>We need access to your contacts to connect with other users through the app.</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>AntDesign.ttf</string>

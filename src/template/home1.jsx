@@ -218,8 +218,7 @@ const Home1 = () => {
       }
     } catch (error) {
       // Log the error message
-      console.log('Error occurred:', error);
-      Alert.alert('Error', 'An error occurred while fetching the video.');
+      Alert.alert('Wezume', 'you can now start recording a video.');
       setHasVideo(false);
       setIsVideoVisible(false);
     } finally {
@@ -497,7 +496,7 @@ const Home1 = () => {
 
 const styles = StyleSheet.create({
   imageBackground: {
-    flex: 10,
+    flex:9,
     justifyContent: 'center',
     alignItems: 'center',
     width: '100%',

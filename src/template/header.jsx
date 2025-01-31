@@ -206,7 +206,7 @@ const Header = ({Value, profile, userName, userId}) => {
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('Account')}>
               <Text style={styles.options}>
-                <User name={'user'} size={20} color={'grey'} /> Profile
+                <User name={'user'} size={20} color={'grey'} />     Profile
               </Text>
             </TouchableOpacity>
             <View style={styles.line}></View>
@@ -216,7 +216,7 @@ const Header = ({Value, profile, userName, userId}) => {
                 setIsModalVisible(false),
               ]}>
               <Text style={styles.options}>
-                <Search name={'search'} size={22} color={'grey'} /> Search
+                <Search name={'search'} size={22} color={'grey'} />   Search
               </Text>
             </TouchableOpacity>
             {/* Check if the user's job role is 'employee' or 'entrepreneur' */}
@@ -228,34 +228,34 @@ const Header = ({Value, profile, userName, userId}) => {
                     navigation.navigate('Myvideos', {userName, userId})
                   }>
                   <Text style={styles.options}>
-                    <Video name={'video'} size={22} color={'grey'} /> Videos
+                    <Video name={'video'} size={22} color={'grey'} />    Videos
                   </Text>
                 </TouchableOpacity>
               </>
             )}
-            <View style={styles.line}></View>
+            {/* <View style={styles.line}></View>
             <TouchableOpacity onPress={''}>
               <Text style={styles.options}>
                 <Video name={'comment-video'} size={22} color={'grey'} />{' '}
                 Tutorial Video
               </Text>
-            </TouchableOpacity>
-            <View style={styles.line}></View>
+            </TouchableOpacity> */}
+            {/* <View style={styles.line}></View>
             <TouchableOpacity onPress={''}>
               <Text style={styles.options}>
                 <Faq name={'questioncircle'} size={20} color={'grey'} /> FAQ
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             <View style={styles.line}></View>
             <TouchableOpacity onPress={logouts}>
               <Text style={styles.options}>
-                <Logout name={'logout'} size={20} color={'grey'} /> Logout
-              </Text>
+                <Logout name={'logout'} size={20} color={'grey'} />     Logout
+              </Text> 
             </TouchableOpacity>
             <View style={styles.line}></View>
             <TouchableOpacity onPress={openPrivacyPolicy}>
               <Text style={styles.options}>
-                <Privacy name={'privacy-tip'} size={20} color={'grey'} /> Privacy Policy
+                <Privacy name={'privacy-tip'} size={20} color={'grey'} />     Privacy Policy
               </Text>
             </TouchableOpacity>
             <View style={styles.line}></View>
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    height:90,
+    height:110,
     zIndex: 100,
   },
   profileSection: {
@@ -380,14 +380,14 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Transparent dark overlay
+    backgroundColor: 'rgba(0, 0, 0, 0.7)', // Transparent dark overlay
     justifyContent: 'flex-start',
     alignItems: 'flex-start',
   },
   modalMenu: {
     width: '80%',
     height: '100%',
-    backgroundColor: 'rgba(255, 255, 255,0.8)',
+    backgroundColor: 'rgba(187, 224, 252,1)',
     padding: 20,
     alignItems: 'flex-start',
     justifyContent: 'flex-start',
@@ -404,16 +404,26 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginBottom:10,
     marginTop:50,
+    marginRight:10,
+    height:30,
+    width:30,
+    borderWidth:1,
+    borderRadius:50,
+    elevation:10,
   },
   closeButtonText: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize:20,
+    fontWeight: '800',
     color: '#000',
+    textAlign:'center',
+    paddingTop:3,
+    elevation:10,
   },
   options: {
-    fontSize: 18,
+    fontSize:20,
     margin: 10,
     color: '#000',
+    fontWeight:'500',
   },
   line: {
     width: '90%', // Adjusted to span across most of the modal

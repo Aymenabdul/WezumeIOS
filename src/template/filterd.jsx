@@ -763,7 +763,7 @@ const Filtered = ({ route, navigation }) => {
                   <TouchableOpacity
                     onPress={() => navigation.navigate('Trending')}
                     style={styles.trending1}>
-                    <Text style={{ color: '#ffffff', fontWeight: '600' }}>
+                    <Text style={{color: '#ffffff', fontWeight: '800',fontSize:16,}}>
                       #Trending
                     </Text>
                   </TouchableOpacity>
@@ -771,15 +771,15 @@ const Filtered = ({ route, navigation }) => {
                   <TouchableOpacity
                     onPress={() => navigation.navigate('LikeScreen')}
                     style={styles.trending}>
-                    <Text style={{ color: '#ffffff', fontWeight: '600' }}>
+                    <Text style={{color: '#ffffff', fontWeight: '800',fontSize:16,}}>
                       Liked Video
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
+                  {/* <TouchableOpacity
                     onPress={closeModal}
                     style={styles.buttoncls}>
                     <Ant name={'arrowleft'} style={styles.buttoncls} />
-                  </TouchableOpacity>
+                  </TouchableOpacity> */}
                   <TouchableOpacity
                     onPress={() =>
                       isLiked[videoId] ? handleDislike() : handleLike()
@@ -970,21 +970,22 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: '45%',
     padding: 28,
-    top: 30,
+    top:50,
     fontWeight: '900',
+    fontSize:20,
   },
   trending: {
     position: 'absolute',
-    right: '23%',
+    right: '19%',
     padding: 28,
-    top: 30,
+    top:50,
     fontWeight: '900',
   },
   line: {
     position: 'absolute',
     right: '43%',
     padding: 28,
-    top: 30,
+    top: 50,
     fontWeight: '700',
     color: '#ffffff',
   },

@@ -47,7 +47,7 @@ const CameraPage = () => {
   let timerInterval = useRef(null);
   const device = useCameraDevice(isFrontCamera ? 'front' : 'back');
 
-  const format = useCameraFormat(device, [{fps:30}]);
+  const format = useCameraFormat(device, [{fps:60}]);
   const fps = format.minFps;
 
   // Trigger the alert when the component is mounted (camera screen entered)
@@ -63,30 +63,30 @@ const CameraPage = () => {
   useEffect(() => {
     const requestPermissions = async () => {
       try {
-        // Request permissions for storage, microphone, and phone
-        const storagePermission = await request(
-          PERMISSIONS.ANDROID.READ_EXTERNAL_STORAGE,
-        );
-        const microphonePermission = await request(
-          PERMISSIONS.ANDROID.RECORD_AUDIO,
-        );
-        const phonePermission = await request(
-          PERMISSIONS.ANDROID.READ_PHONE_STATE,
-        );
+        let cameraStatus, microphoneStatus, storageStatus;
 
-        console.log('Storage permission:', storagePermission);
-        console.log('Microphone permission:', microphonePermission);
-        console.log('Phone permission:', phonePermission);
+        if (Platform.OS === 'ios') {
+          cameraStatus = await request(PERMISSIONS.IOS.CAMERA);
+          microphoneStatus = await request(PERMISSIONS.IOS.MICROPHONE);
+          storageStatus = await request(PERMISSIONS.IOS.PHOTO_LIBRARY);
+        } else if (Platform.OS === 'android') {
+          cameraStatus = await request(PERMISSIONS.ANDROID.CAMERA);
+          microphoneStatus = await request(PERMISSIONS.ANDROID.RECORD_AUDIO);
+          storageStatus = await request(PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE);
+        }
 
-        // Handle permission results
+        console.log('Camera permission:', cameraStatus);
+        console.log('Microphone permission:', microphoneStatus);
+        console.log('Storage permission:', storageStatus);
+
         if (
-          storagePermission === RESULTS.GRANTED &&
-          microphonePermission === RESULTS.GRANTED &&
-          phonePermission === RESULTS.GRANTED
+          cameraStatus === RESULTS.GRANTED &&
+          microphoneStatus === RESULTS.GRANTED &&
+          storageStatus === RESULTS.GRANTED
         ) {
           console.log('All permissions granted');
         } else {
-          console.log('Some permissions are denied');
+          console.warn('Some permissions are denied');
         }
       } catch (error) {
         console.error('Error requesting permissions:', error);
@@ -95,13 +95,24 @@ const CameraPage = () => {
 
     // Request permissions on component mount
     requestPermissions();
-  }, []); // Empty dependency array ensures this effect runs only once when the component mounts
+  }, []);// Replace with your component's UI 
 
   useEffect(() => {
     if (!hasPermission) {
       requestPermission();
     }
   }, [hasPermission, requestPermission]);
+  // Debug log for permission status
+  console.log('Camera permission:', hasPermission);
+
+  if (!device) {
+    console.log('No camera device found.');
+    return (
+      <ActivityIndicator
+        style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}
+      />
+    );
+  }
   // Debug log for permission status
   console.log('Camera permission:', hasPermission);
 
@@ -249,8 +260,8 @@ const CameraPage = () => {
         video={true}
         audio={true} // Ensure audio is enabled
         torch={onFlash}
-        format={format}
-        fps={fps}
+        // format={format}
+        // fps={fps}
       />
 
       {/* Flash Toggle */}

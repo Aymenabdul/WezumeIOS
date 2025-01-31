@@ -719,7 +719,7 @@ const Edit = () => {
                     <TouchableOpacity
                       onPress={() => removeLanguageField(index)}
                       style={styles.removeButton}>
-                      <Text style={styles.removeButtonText}>X</Text>
+                      <Text style={styles.removeButtonText}>Remove</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1118,7 +1118,7 @@ const Edit = () => {
         {/* Navigation to Login Screen */}
         <TouchableOpacity onPress={() => navigation.navigate('Account')}>
           <Text style={styles.logAccount}>
-            <Text style={{color: 'blue'}}>Back to Profile</Text>
+            <Text style={{color: '#000'}}>Back to Profile</Text>
           </Text>
         </TouchableOpacity>
       </LinearGradient>
@@ -1173,13 +1173,14 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: '#ffffff',
-    padding: 7,
+    padding:10,
     marginBottom: 10,
     borderRadius: 5,
     paddingLeft: 15,
     color: 'black',
     backgroundColor: '#ffffff',
-    fontSize: 16,
+    fontSize:18,
+    fontWeight:'500',
   },
   label: {
     fontSize: 16,
@@ -1188,12 +1189,17 @@ const styles = StyleSheet.create({
   },
   picker: {
     width: '100%',
+    overflow:'hidden',
     borderWidth: 1,
-    borderColor: '#fffff',
+    borderColor: '#ffffff', // Use a visible border color
     marginBottom: 10,
     color: 'black',
     backgroundColor: '#ffffff',
-    fontSize: 18,
+    fontSize: 16,
+    height: 40, // Reduced height
+    justifyContent: 'center', // Ensures content alignment
+    borderRadius: 5, // Optional for rounded corners
+    paddingHorizontal: 10, // Adjust spacing inside the picker
   },
   loadingIndicator: {
     marginVertical: 20,
@@ -1207,6 +1213,8 @@ const styles = StyleSheet.create({
     marginTop: 15,
     textAlign: 'center',
     color: '#000',
+    fontWeight:'700',
+    fontSize:16,
   },
   signupButton: {
     height: 40,
@@ -1237,8 +1245,9 @@ const styles = StyleSheet.create({
   },
   uploadButtonText: {
     color: '#ffffff',
-    fontWeight: '500',
+    fontWeight: '700',
     marginLeft: '19%',
+    fontSize:18,
   },
   dropdownButton: {
     paddingVertical: 10,
@@ -1252,7 +1261,8 @@ const styles = StyleSheet.create({
   },
   dropdownButtonText: {
     color: '#000',
-    fontSize: 16,
+    fontSize:18,
+    fontWeight:'500',
   },
   dropdownContainer: {
     backgroundColor: '#fff',
@@ -1293,20 +1303,23 @@ const styles = StyleSheet.create({
   },
   addButtonText: {
     color: '#FFF',
-    fontWeight: 'bold',
+    fontWeight: '700',
+    fontSize:16,
   },
   removeButton: {
     backgroundColor: '#007BFF',
     padding: 5,
     borderRadius: 5,
-    width: 20,
+    width:'25%',
     marginTop: -3,
     marginBottom: 5,
     alignSelf: 'flex-end',
   },
   removeButtonText: {
     color: '#FFF',
-    fontWeight: 'bold',
+    fontWeight: '700',
+    textAlign:'center',
+    fontSize:16,
   },
 });
 

@@ -49,10 +49,6 @@ const LoginScreen = () => {
 
       const {firstName, jobOption, userId, industry, videos} = response.data;
 
-      console.log('====================================');
-      console.log('joboption in loginScreen ',jobOption);
-      console.log('====================================');
-
       console.log('API Response:', response.data);
 
       if (Array.isArray(videos) && videos.length > 0 && videos[0]) {
@@ -486,11 +482,15 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     color: 'black',
     backgroundColor: '#fff',
+    fontSize:20,
+    fontWeight:'600',
   },
   createAccount: {
     color: '#000',
     marginTop: 10,
     textAlign: 'center',
+    fontWeight:'600',
+    fontSize:17,
   },
   linkedinButton: {
     backgroundColor: '#ffff',
@@ -549,7 +549,8 @@ const styles = StyleSheet.create({
   signupButtonText: {
     fontWeight: '500',
     color: '#ffffff',
-    fontSize: 20,
+    fontSize:22,
+    fontWeight:'600',
   },
   btn: {
     width: 150,
@@ -569,8 +570,9 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     marginHorizontal: 8,
-    fontSize: 16,
-    color: '#555',
+    fontSize:18,
+    fontWeight:'600',
+    color: '#24252B',
   },
   roleSelectionContainer: {
     flex: 1,

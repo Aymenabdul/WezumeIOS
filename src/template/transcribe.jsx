@@ -201,9 +201,6 @@ const [ userId, setUserId ] = useState();
 
   // Fetch transcription
   const fetchTranscription = async () => {
-    console.log('====================================');
-    console.log('transcription userId',userId);
-    console.log('====================================');
     try {
       const response = await axios.get(
         `${env.baseURL}/api/videos/${userId}/transcription`,
@@ -215,8 +212,7 @@ const [ userId, setUserId ] = useState();
         alert('No transcription available for this user.');
       }
     } catch (error) {
-      console.error('Error fetching transcription:', error.message);
-      alert('Failed to fetch transcription.');
+      Alert.alert('wezume','we could\'nt detect any transcription for this video.');
     }
   };
 
@@ -539,7 +535,7 @@ const triggerOwnerNotification = async () => {
 
 const styles = StyleSheet.create({
   imageBackground: {
-    flex: 13,
+    flex: 10,
   },
   container: {
     flex: 1,

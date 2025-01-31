@@ -661,7 +661,7 @@ const SignupScreen = () => {
                     <TouchableOpacity
                       onPress={() => removeLanguageField(index)}
                       style={styles.removeButton}>
-                      <Text style={styles.removeButtonText}>X</Text>
+                      <Text style={styles.removeButtonText}>Remove</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1121,7 +1121,8 @@ const styles = StyleSheet.create({
     paddingLeft: 15,
     color: 'black',
     backgroundColor: '#ffffff',
-    fontSize: 16,
+    fontSize:20,
+    fontWeight:'600',
   },
   label: {
     fontSize: 16,
@@ -1130,12 +1131,17 @@ const styles = StyleSheet.create({
   },
   picker: {
     width: '100%',
+    overflow:'hidden',
     borderWidth: 1,
-    borderColor: '#fffff',
+    borderColor: '#ffffff', // Use a visible border color
     marginBottom: 10,
     color: 'black',
     backgroundColor: '#ffffff',
-    fontSize: 18,
+    fontSize:20,
+    height: 40, // Reduced height
+    justifyContent: 'center', // Ensures content alignment
+    borderRadius: 5, // Optional for rounded corners
+    paddingHorizontal: 10, // Adjust spacing inside the picker
   },
   loadingIndicator: {
     marginVertical: 20,
@@ -1149,6 +1155,8 @@ const styles = StyleSheet.create({
     marginTop: 15,
     textAlign: 'center',
     color: '#000',
+    fontSize:17,
+    fontWeight:'600',
   },
   signupButton: {
     height: 40,
@@ -1181,6 +1189,8 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '500',
     marginLeft: '19%',
+    fontSize:20,
+    fontWeight:'600',
   },
   dropdownButton: {
     paddingVertical: 10,
@@ -1194,7 +1204,8 @@ const styles = StyleSheet.create({
   },
   dropdownButtonText: {
     color: '#000',
-    fontSize: 16,
+    fontSize:20,
+    fontWeight:'600',
   },
   dropdownContainer: {
     backgroundColor: '#fff',
@@ -1209,6 +1220,8 @@ const styles = StyleSheet.create({
     padding: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
+    fontSize:20,
+    fontWeight:'600',
   },
   scrollView: {
     maxHeight: 150,
@@ -1218,8 +1231,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
   },
   dropdownOptionText: {
-    fontSize: 16,
     color: '#333',
+    fontSize:20,
+    fontWeight:'600',
   },
   noResultsText: {
     textAlign: 'center',
@@ -1228,20 +1242,21 @@ const styles = StyleSheet.create({
   },
   addButton: {
     backgroundColor: '#007BFF',
-    padding: 5,
+    padding:7,
     borderRadius: 5,
     marginBottom: 5,
     alignSelf: 'flex-end',
   },
   addButtonText: {
     color: '#FFF',
-    fontWeight: 'bold',
+    fontWeight: '600',
+    fontSize:17,
   },
   removeButton: {
     backgroundColor: '#007BFF',
-    padding: 5,
+    padding:7,
     borderRadius: 5,
-    width: 20,
+    width:'25%',
     marginTop: -3,
     marginBottom: 5,
     alignSelf: 'flex-end',
@@ -1249,6 +1264,7 @@ const styles = StyleSheet.create({
   removeButtonText: {
     color: '#FFF',
     fontWeight: 'bold',
+    textAlign:'center',
   },
 });
 
