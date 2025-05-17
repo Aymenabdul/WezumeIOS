@@ -40,6 +40,7 @@ const Edit = () => {
   const [languages, setLanguages] = useState(['']);
   const navigation = useNavigation();
   const [base64Image, setBase64Image] = useState(null);
+  const [isImageUploaded, setIsImageUploaded] = useState(false); // Add state for image upload status
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isIndustryDropdownOpen, setIsIndustryDropdownOpen] = useState(false);
   const [industrySearchText, setIndustrySearchText] = useState('');
@@ -237,7 +238,6 @@ const Edit = () => {
   const getUserDetails = async userId => {
     try {
       const response = await axios.get(`${env.baseURL}/users/get/${userId}`);
-      console.log('User details:', response.data);
       // Set the response data to your state variables
       setFirstName(response.data.firstName);
       setLastName(response.data.lastName);
@@ -259,7 +259,6 @@ const Edit = () => {
     }
   };
   const checkIfEmailExists = async email => {
-    console.log('Checking email:', email); // Log the email you're checking
     try {
       const response = await axios.post(
         `${env.baseURL}/userscheck-email`,
@@ -275,7 +274,6 @@ const Edit = () => {
   };
 
   const checkIfPhoneExists = async phoneNumber => {
-    console.log('Checking phoneNumber:', phoneNumber);
     try {
       const response = await axios.post(
         `${env.baseURL}/userscheck-phone`,
@@ -284,7 +282,6 @@ const Edit = () => {
           headers: {'Content-Type': 'application/json'},
         },
       );
-      console.log('Response from phonenumber check:', response.data);
       return response.data; // Returns true if phone exists, false otherwise
     } catch (error) {
       console.error('Error checking phone number:', error);
@@ -295,7 +292,6 @@ const Edit = () => {
   const handleProfilePic = async () => {
     launchImageLibrary({mediaType: 'photo'}, async response => {
       if (response.didCancel) {
-        console.log('User canceled image picker');
       } else if (response.errorMessage) {
         console.error('ImagePicker error: ', response.errorMessage);
       } else if (response.assets && response.assets.length > 0) {
@@ -309,10 +305,10 @@ const Edit = () => {
             '',
           );
           // Now you can set the cleanBase64String to your form data
-          setBase64Image(cleanBase64String);
         } catch (error) {
           console.error('Error converting image to Base64: ', error);
         }
+        setIsImageUploaded(true); // Set image upload status to true
       }
     });
   };
@@ -387,13 +383,21 @@ const Edit = () => {
           headers: {'Content-Type': 'application/json'},
         },
       );
-
-      console.log('User updated:', response.data);
       Alert.alert('Success', 'Profile updated successfully!', [
         {
           text: 'OK',
           onPress: () => {
-            navigation.goBack(); // Navigate to the previous screen
+            if (
+              jobOption === 'Employee' ||
+              jobOption === 'Entrepreneur' ||
+              jobOption === 'Freelancer'
+            ) {
+              navigation.navigate('home1'); // Navigate to 'HomeOne'
+            } else if (jobOption === 'Employer' || jobOption === 'Investor') {
+              navigation.navigate('HomeScreen'); // Navigate to 'Home'
+            } else {
+              navigation.goBack(); // Default: go back
+            }
           },
         },
       ]);
@@ -580,7 +584,7 @@ const Edit = () => {
                   {/* Search Input */}
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search industry"
+                    placeholder="Search Industry"
                     placeholderTextColor="#666"
                     value={industrySearchText}
                     onChangeText={setIndustrySearchText}
@@ -629,7 +633,7 @@ const Edit = () => {
                   {/* Search Input */}
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search city"
+                    placeholder="Search City"
                     placeholderTextColor="#666"
                     value={searchText}
                     onChangeText={setSearchText}
@@ -682,7 +686,7 @@ const Edit = () => {
                     <View style={styles.dropdownContainer}>
                       <TextInput
                         style={styles.searchInput}
-                        placeholder="Search language"
+                        placeholder="Search Language"
                         placeholderTextColor="#666"
                         value={languageSearchText}
                         onChangeText={setLanguageSearchText}
@@ -789,7 +793,7 @@ const Edit = () => {
                   {/* Search Input */}
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search industry"
+                    placeholder="Search Industry"
                     placeholderTextColor="#666"
                     value={industrySearchText}
                     onChangeText={setIndustrySearchText}
@@ -838,7 +842,7 @@ const Edit = () => {
                   {/* Search Input */}
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search city"
+                    placeholder="Search City"
                     placeholderTextColor="#666"
                     value={searchText}
                     onChangeText={setSearchText}
@@ -918,7 +922,7 @@ const Edit = () => {
                   {/* Search Input */}
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search industry"
+                    placeholder="Search Industry"
                     placeholderTextColor="#666"
                     value={industrySearchText}
                     onChangeText={setIndustrySearchText}
@@ -967,7 +971,7 @@ const Edit = () => {
                   {/* Search Input */}
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search city"
+                    placeholder="Search City"
                     placeholderTextColor="#666"
                     value={searchText}
                     onChangeText={setSearchText}
@@ -1047,7 +1051,7 @@ const Edit = () => {
                   {/* Search Input */}
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search city"
+                    placeholder="Search City"
                     placeholderTextColor="#666"
                     value={searchText}
                     onChangeText={setSearchText}
@@ -1090,8 +1094,13 @@ const Edit = () => {
           {/* Profile Picture Upload Button */}
           <TouchableOpacity
             onPress={handleProfilePic}
-            style={styles.uploadButton}>
-            <Text style={styles.uploadButtonText}>Upload Profile Picture</Text>
+            style={[
+              styles.uploadButton,
+              isImageUploaded && {backgroundColor: 'green'}, // Change color to green if uploaded
+            ]}>
+            <Text style={styles.uploadButtonText}>
+              {isImageUploaded ? 'Image Uploaded' : 'Upload Profile Picture'}
+            </Text>
             <UploadImage name={'file-image-plus'} size={20} color={'white'} />
           </TouchableOpacity>
           {/* </> */}

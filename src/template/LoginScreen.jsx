@@ -162,7 +162,6 @@ const LoginScreen = () => {
           const {given_name, email, picture} = response.data; // 'picture' contains the URL
 
           if (given_name && email && picture) {
-
             // Check if email is already signed up
             const userResponse = await axios.get(`${env.baseURL}/users/check`, {
               params: {email},
@@ -171,26 +170,42 @@ const LoginScreen = () => {
             if (userResponse.data.exists) {
               // User exists, log them in (Skip role selection)
               console.log('User already signed up, logging in...');
-              const {userId, jobOption,firstName} = userResponse.data;
-              await AsyncStorage.setItem('userId',JSON.stringify(userId));// Assuming userResponse contains userId and jobOption
-              await AsyncStorage.setItem('firstName',firstName);
+              const {userId, jobOption, firstName, phoneNumber} =
+                userResponse.data;
+              await AsyncStorage.setItem('userId', JSON.stringify(userId));
+              await AsyncStorage.setItem('firstName', firstName);
 
-              // Navigate based on jobOption
-              if (jobOption === 'Employee' || jobOption === 'Entrepreneur' || jobOption === 'Freelancer') {
-                console.log('Navigating to HomeScreen...');
-                navigation.navigate('home1', {
-                  firstName,
-                  email,
-                  jobOption,
-                  userId,
-                });
-              } else if (
-                jobOption === 'Employer' ||
-                jobOption === 'Investor'
-              ) {
-                console.log('Navigating to home1...');
-                navigation.navigate('HomeScreen', {
-                  firstName,
+              if (phoneNumber) {
+                // Navigate based on jobOption
+                if (
+                  jobOption === 'Employee' ||
+                  jobOption === 'Entrepreneur' ||
+                  jobOption === 'Freelancer'
+                ) {
+                  console.log('Navigating to home1...');
+                  navigation.navigate('home1', {
+                    firstName,
+                    email,
+                    jobOption,
+                    userId,
+                  });
+                } else if (
+                  jobOption === 'Employer' ||
+                  jobOption === 'Investor'
+                ) {
+                  console.log('Navigating to HomeScreen...');
+                  navigation.navigate('HomeScreen', {
+                    firstName,
+                    email,
+                    jobOption,
+                    userId,
+                  });
+                }
+              } else {
+                // User does not have a phone number, navigate to EditScreen
+                console.log('Navigating to EditScreen...');
+                navigation.navigate('Edit', {
+                  firstName: given_name,
                   email,
                   jobOption,
                   userId,
@@ -220,52 +235,66 @@ const LoginScreen = () => {
         }
       }
     }
-    handleRoleSelect(); // Make sure this is not running prematurely
   };
 
-  const handleRoleSelect = async role => {
+  const handleRoleSelect = async (role) => {
     if (!userData) {
       console.log('No user data available. Exiting handleRoleSelect.');
       return;
     }
-
-    const {email, given_name} = userData;
-    console.log('User data received:', {email, given_name});
-
+  
+    const { email, given_name  } = userData;
+    console.log('User data received:', { email, given_name  });
+  
+    // Function to check if the email is from a public domain
+    const isPublicDomain = (email) => {
+      const publicDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com'];
+      const domain = email.split('@')[1];
+      return publicDomains.includes(domain);
+    };
+  
     try {
       // Step 1: Check if the user exists in the database
       console.log('Checking if user exists in the database...');
       const response = await axios.get(`${env.baseURL}/users/check`, {
-        params: {email},
+        params: { email },
       });
-
+  
       console.log('Database response:', response.data);
-
+  
       if (response.status === 200 && response.data.exists) {
         console.log('User already exists in the database.');
-
-        // Retrieve jobOption, userId, and firstName from the response
-        const {jobOption, userId, firstName} = response.data;
-
+  
+        const { jobOption, userId, firstName } = response.data;
+  
         // Store data in AsyncStorage
         await AsyncStorage.setItem('userId', JSON.stringify(userId));
         await AsyncStorage.setItem('firstName', firstName);
-
-        // Close the role selection modal
+  
         setShowRoleSelection(false);
-
+  
+        // Validate employer email domain before navigation
+        if (jobOption === 'Employer' && isPublicDomain(email)) {
+          Alert.alert(
+            'Restricted Email',
+            'Public email domains are not allowed for recruiters.',
+            [{ text: 'OK', onPress: () => navigation.navigate('LoginScreen') }]
+          );
+          return;
+        }
+  
         // Navigate based on jobOption
-        if (jobOption === 'Employer' || jobOption === 'Investor') {
+        if (role === 'Employer' || role === 'Investor') {
           console.log('Navigating to HomeScreen...');
-          navigation.navigate('HomeScreen', {
+          navigation.navigate('Edit', {
             firstName: given_name,
             email,
             jobOption,
             userId,
           });
-        } else if (jobOption === 'Employee' || jobOption === 'Entrepreneur') {
+        } else if (role === 'Employee' || role === 'Entrepreneur') {
           console.log('Navigating to home1...');
-          navigation.navigate('home1', {
+          navigation.navigate('Edit', {
             firstName: given_name,
             email,
             jobOption,
@@ -274,40 +303,41 @@ const LoginScreen = () => {
         }
       } else {
         console.log('User does not exist. Prompting for role selection.');
-
-        // Ensure role is selected
+  
         if (!role) {
           console.error('Role not selected. Prompting user.');
           Alert.alert('Error', 'Please select a role before continuing.');
           return;
         }
-
-        // Save the user details only after role is selected
+  
+        // Restrict public domains for employers before saving user details
+        if (role === 'Employer' && isPublicDomain(email)) {
+          Alert.alert(
+            'Restricted Email',
+            'Public email domains are not allowed for recruiters.',
+            [{ text: 'OK', onPress: () => navigation.navigate('LoginScreen') }]
+          );
+          return;
+        }
+  
         console.log('Saving new user details to the database...');
         const saveResponse = await axios.post(`${env.baseURL}/users`, {
           firstName: given_name,
           email,
           jobOption: role,
         });
-
+  
         console.log('Save response:', saveResponse.data);
-
+  
         if (saveResponse.status === 201) {
           console.log('User details saved successfully.');
-
-          // Store new user details in AsyncStorage
-          await AsyncStorage.setItem(
-            'userId',
-            JSON.stringify(saveResponse.data.userId),
-          ); // Assuming userId is returned
+  
+          await AsyncStorage.setItem('userId', JSON.stringify(saveResponse.data.userId));
           await AsyncStorage.setItem('firstName', given_name);
-
-          console.log('New user details stored in AsyncStorage.');
-          // Close the role selection modal
+  
           setShowRoleSelection(false);
-
-          // Navigate based on the selected role
-          if (role === 'Employer' || role === 'Investor') {
+  
+          if (jobOption === 'Employer' || jobOption === 'Investor') {
             console.log('Navigating to HomeScreen...');
             navigation.navigate('HomeScreen', {
               firstName: given_name,
@@ -326,17 +356,20 @@ const LoginScreen = () => {
           }
         } else {
           console.error('Failed to save user details.');
-          Alert.alert(
-            'Error',
-            'Failed to save user details. Please try again.',
-          );
+          Alert.alert('Error', 'Failed to save user details. Please try again.');
         }
       }
     } catch (error) {
       console.error('Error in handleRoleSelect:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      Alert.alert(
+        'Alert',
+        'Please check and verify your email to continue.\n(Note: Check your spam folder as well.)',
+        [{ text: 'OK', onPress: () => navigation.navigate('LoginScreen') }]
+      );
     }
+    
   };
+  
 
   return (
     <FastImage
@@ -405,6 +438,12 @@ const LoginScreen = () => {
         <TouchableOpacity onPress={() => navigation.navigate('SignupScreen')}>
           <Text style={styles.createAccount}>
             Don't Have An Account ? <Text style={{color: 'blue'}}> SignUp</Text>
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => navigation.navigate('ForgetPassword')}>
+          <Text style={styles.createAccount}>
+            Forget Password ?
           </Text>
         </TouchableOpacity>
 
@@ -557,6 +596,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 100,
     borderRadius: 10,
     elevation: 5,
+  },
+  createAccount: {
+    color: '#000',
+    marginTop: 10,
+    textAlign: 'center',
   },
   dividerContainer: {
     flexDirection: 'row',

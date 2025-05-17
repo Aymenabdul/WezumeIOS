@@ -46,9 +46,10 @@ const CameraPage = () => {
   const {hasPermission, requestPermission} = useCameraPermission();
   let timerInterval = useRef(null);
   const device = useCameraDevice(isFrontCamera ? 'front' : 'back');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const format = useCameraFormat(device, [{fps:60}]);
-  const fps = format.minFps;
+  //const fps = format.minFps;
 
   // Trigger the alert when the component is mounted (camera screen entered)
   useEffect(() => {
@@ -138,6 +139,7 @@ const CameraPage = () => {
     }
 
     setUploading(true);
+    setUploadProgress(0); // Reset progress when starting upload
 
     let formattedUri =
       Platform.OS === 'android' ? 'file://' + videoUri : videoUri;
@@ -158,6 +160,12 @@ const CameraPage = () => {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
+          onUploadProgress: progressEvent => {
+            const percent = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total,
+            );
+            setUploadProgress(percent); // Update the progress state
+          },
         },
       );
 
@@ -166,7 +174,6 @@ const CameraPage = () => {
       const {filePath, fileName, id} = response.data;
       if (filePath && id) {
         alert('Video uploaded successfully!');
-
         const videoUrl = `${env.baseURL}/${filePath.replace(/\\/g, '/')}`;
         const newvideos = {
           id,
@@ -184,13 +191,12 @@ const CameraPage = () => {
           ],
         });
         setCurrentTimer(60); // Reset the timer
+        setUploading(false);
       } else {
         alert('Unexpected response from server. Missing required fields.');
       }
     } catch (error) {
       alert('Error uploading video. Please try again.');
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -357,12 +363,17 @@ const CameraPage = () => {
             </View>
           </View>
           {/* Loading Spinner */}
-          {isUploading && (
-            <View style={styles.uploadingOverlay}>
-              <ActivityIndicator size="large" color="white" />
-              <Text style={styles.uploadingText}>Uploading...</Text>
-            </View>
-          )}
+                   
+      {isUploading && (
+        <View style={styles.uploadingOverlay}>
+          <ActivityIndicator size="large" color="white" />
+          <Text style={styles.uploadingText}>
+            Uploading... {uploadProgress}%
+          </Text>
+          {/* Displaying the progress here */}
+        </View>
+      )}
+
         </Modal>
       )}
 

@@ -55,7 +55,6 @@ const [ userId, setUserId ] = useState();
   useEffect(() => {
     const Asyncstorage = async () => {
       try {
-        // const {firstName, industry, userId} = route.params;
         const apiFirstName = await AsyncStorage.getItem('firstName');
         const apiindustry = await AsyncStorage.getItem('industry');
         const apiUserId = await AsyncStorage.getItem('userId');
@@ -66,26 +65,10 @@ const [ userId, setUserId ] = useState();
         fetchProfilePic(apiUserId);
       fetchVideo(apiUserId);
       } catch (error) {
-        console.log('====================================');
-        console.log('Error', error);
-        console.log('====================================');
       }
-    }
+    };
     Asyncstorage();
-  }, [])
-
-  // useEffect(() => {
-  //   if (userId) {
-  //     fetchProfilePic(userId);
-  //     fetchVideo(userId);
-  //   } else {
-  //     console.error('No userId found');
-  //     setLoading(false);
-  //   }
-  // }, [userId]);
-
-  // Function to parse SRT subtitle format
-  // Function to convert time format to seconds
+  }, []);
   const parseTimeToSeconds = timeStr => {
     const [hours, minutes, seconds] = timeStr.split(':');
     const [sec, milli] = seconds.split(',');
@@ -96,7 +79,6 @@ const [ userId, setUserId ] = useState();
       parseInt(milli) / 1000
     );
   };
-  // Function to check which subtitle is currently active based on video time
   useEffect(() => {
     const activeSubtitle = subtitles.find(
       subtitle =>
@@ -168,36 +150,23 @@ const [ userId, setUserId ] = useState();
       setLoading(false);
     }
   };
-  // Fetch user's video
   const fetchVideo = async (userId) => {
     setLoading(true);
-      try {
-        const rangeHeader = 'bytes=0-999999';
-        const response = await fetch(
-          `${env.baseURL}/api/videos/user/${userId}`,{
-            headers: {
-              'Range': rangeHeader,
-            },
-            responseType: 'arraybuffer',
-          }
-        );
-        if (!response.ok) throw new Error('Failed to fetch video');
-        console.log('====================================');
-        console.log("fwtchVideo", response);
-        console.log('====================================');
-        const videoUril = `${env.baseURL}/api/videos/user/${userId}`;
-        setVideoUri(videoUril);
-        setHasVideo(true); // Set to true if video is available
-      } catch (error) {
-        console.log('====================================');
-        console.log("fetchVideo ",error);
-        console.log('====================================');
-        alert('Welcome , you can now start recording the video');
-        setHasVideo(false); // Set to false if no video is available
-      } finally {
-        setLoading(false);
+    try {
+      const response = await axios.get(`${env.baseURL}/api/videos/user/${userId}`);
+      if (response.data && response.data.videoUrl) {
+        setVideoUri(response.data.videoUrl); // Set video URL from API response
+        setHasVideo(true);
+      } else {
+        throw new Error('Video URL not found in response');
       }
-    };
+    } catch (error) {
+      alert('Welcome, you can now start recording the video');
+      setHasVideo(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Fetch transcription
   const fetchTranscription = async () => {
@@ -207,27 +176,21 @@ const [ userId, setUserId ] = useState();
       );
       if (response.data.transcription) {
         setTranscription(response.data.transcription);
-        setIsTranscriptionModalVisible(true); // Show modal after fetching
+        setIsTranscriptionModalVisible(true);
       } else {
         alert('No transcription available for this user.');
       }
     } catch (error) {
-      Alert.alert('wezume','we could\'nt detect any transcription for this video.');
+      alert('Failed to fetch transcription.');
     }
   };
-
-  
-
-  // Update transcription
   const updateTranscription = async (userId, transcription) => {
     try {
       const response = await axios.put(
         `${env.baseURL}/api/videos/${userId}/transcription`,
         {transcription},
       );
-      console.log('Update successful:', response.data.message);
       setTranscription(transcription);
-      // Close the transcription modal on successful update
       setIsTranscriptionModalVisible(false);
     } catch (error) {
       console.error(
@@ -247,7 +210,6 @@ const [ userId, setUserId ] = useState();
 
     try {
       const shareResponse = await Share.open(share);
-      console.log('Share successful:', shareResponse);
     } catch (error) {
       console.error('Error sharing video:', error);
     }
@@ -262,7 +224,6 @@ const [ userId, setUserId ] = useState();
         if (response.data && response.data.length > 0) {
           setVideoId(response.data[0]); // Assuming the videoId is the first element, adjust as needed
         } else {
-          console.log('No video found for this user');
         }
       } catch (err) {
         console.error('Error fetching video data:', err);
@@ -278,20 +239,13 @@ const [ userId, setUserId ] = useState();
     axios
       .get(`${env.baseURL}/api/videos/getOwnerByUserId/${userId}`) // Adjust if needed to match your API
       .then(response => {
-        console.log('API Response:', response); // Log the entire response
-
         if (response.data && response.data.phoneNumber) {
           setPhoneNumber(response.data.phoneNumber);
-          console.log('Phone number found:', response.data.phoneNumber); // Log the phone number
         } else {
           Alert.alert('Error', 'Owner not found or no phone number available.');
         }
-
-        // If you also want to set the video ID, make sure it comes from the response
         if (response.data && response.data.videoId) {
-          console.log('Video ID:', response.data.videoId); // Log the videoId
-          // Set the videoId (make sure to define state or variable for it)
-          setVideoId(response.data.videoId); // Assuming you have a setVideoId function
+          setVideoId(response.data.videoId);
         } else {
           Alert.alert('Error', 'No video ID found for this user.');
         }
@@ -304,7 +258,6 @@ const [ userId, setUserId ] = useState();
 
   const makeCall = () => {
     if (phoneNumber) {
-      console.log('Making call to:', phoneNumber);
       Linking.openURL(`tel:${phoneNumber}`).catch(err => {
         console.error('Error making call:', err);
         Alert.alert(
@@ -313,25 +266,17 @@ const [ userId, setUserId ] = useState();
         );
       });
     } else {
-      console.log('No phone number, fetching phone number...'); // Log that we're fetching the phone number
     }
     fetchPhoneNumber(userId);
   };
 
   // Function to send a WhatsApp message
   const sendWhatsappMessage = () => {
-    console.log('sendWhatsappMessage function called'); // Log when the function is called
-
     if (phoneNumber) {
-      const message = `Hello, ${firstName} it's nice to connect with you.`; // Customize your message
+      const message = `Hello, ${firstName} it's nice to connect with you.`;
       const url = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(
         message,
       )}`;
-
-      console.log('Phone number:', phoneNumber); // Log the phone number
-      console.log('Message:', message); // Log the message
-      console.log('Constructed URL:', url); // Log the URL being used for the WhatsApp message
-
       Linking.openURL(url).catch(err => {
         console.error('Error sending WhatsApp message:', err);
         Alert.alert(
@@ -340,17 +285,14 @@ const [ userId, setUserId ] = useState();
         );
       });
     } else {
-      console.log('No phone number, fetching phone number...'); // Log that we're fetching the phone number
     }
     fetchPhoneNumber(userId);
   };
 
   const fetchLikeCount = videoId => {
-    console.log('Fetching like count for videoId:', videoId); // Check if the videoId is correct
     axios
       .get(`${env.baseURL}/api/videos/${videoId}/like-count`)
       .then(response => {
-        console.log('API response:', response.data);
         setLikeCount(response.data); // Update state with the correct count
       })
       .catch(error => {
@@ -407,8 +349,6 @@ const [ userId, setUserId ] = useState();
   // Function to trigger notification for the video owner
 const triggerOwnerNotification = async () => {
   try {
-    console.log('Triggering notification for the video owner...');
-
     await notifee.displayNotification({
       title: 'wezume',
       body: `Your video has been liked by ${firstName}.`,
@@ -419,17 +359,12 @@ const triggerOwnerNotification = async () => {
         vibrate: true,
       },
     });
-
-    console.log('Owner notification triggered.');
   } catch (error) {
     console.log('Error triggering notification for owner:', error);
   }
 };
-  
-
-  // Handle dislike action
   const handleDislike = async () => {
-    const newLikedState = !isLiked[videoId]; // Toggle the dislike status (opposite of like)
+    const newLikedState = !isLiked[videoId];
     setIsLiked(prevState => ({
       ...prevState,
       [videoId]: newLikedState,
@@ -437,13 +372,12 @@ const triggerOwnerNotification = async () => {
 
     try {
       if (!newLikedState) {
-        // If disliked, send dislike request
         await axios.post(
           `${env.baseURL}/api/videos/${videoId}/dislike`,
           null,
           {params: {userId}},
         );
-        setLikeCount(prevCount => prevCount - 1); // Decrement like count (dislike removes like)
+        setLikeCount(prevCount => prevCount - 1);
       }
     } catch (error) {
       console.error('Error toggling dislike:', error);
@@ -507,7 +441,7 @@ const triggerOwnerNotification = async () => {
         transparent>
         <View style={styles.modalBackground}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalHeader}>Transcription</Text>
+            <Text style={{color:'#000',fontWeight:'500'}}>Transcription</Text>
             <TextInput
               value={newTranscription || transcription}
               onChangeText={setNewTranscription}
@@ -535,7 +469,7 @@ const triggerOwnerNotification = async () => {
 
 const styles = StyleSheet.create({
   imageBackground: {
-    flex: 10,
+    flex: 13,
   },
   container: {
     flex: 1,
@@ -558,9 +492,13 @@ const styles = StyleSheet.create({
   videoPlayer: {
     marginLeft: 10,
     marginRight: 10,
-    height: 700,
+    marginTop:23,
+    height:600,
     borderRadius: 10,
-    elevation: 10,
+  },
+  input:{
+    color: '#000',
+    fontWeight:'500',
   },
   transcriptionButton: {
     marginTop: -15,

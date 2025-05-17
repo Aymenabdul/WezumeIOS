@@ -132,6 +132,16 @@ const Header = ({Value, profile, userName, userId}) => {
     Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
   };
 
+  const openTutorial = () => {
+    const url = 'https://wezume.com/wezume-demo-video.mp4';
+    Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
+  };
+
+  const openFaq = () => {
+    const url = 'https://wezume.com/faq/';
+    Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
+  };
+
   // Clear all notifications
   const clearNotifications = async () => {
     try {
@@ -204,58 +214,76 @@ const Header = ({Value, profile, userName, userId}) => {
             <TouchableOpacity style={styles.closeButton} onPress={toggleMenu}>
               <Text style={styles.closeButtonText}>X</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Account')}>
+            <TouchableOpacity onPress={() => {
+              navigation.navigate('Account');
+              toggleMenu();
+            }}>
               <Text style={styles.options}>
-                <User name={'user'} size={20} color={'grey'} />     Profile
+                <User name={'user'} size={20} color={'grey'} />   Profile
               </Text>
             </TouchableOpacity>
             <View style={styles.line}></View>
             <TouchableOpacity
-              onPress={() => [
-                navigation.navigate('profile'),
-                setIsModalVisible(false),
-              ]}>
+              onPress={() => {
+                navigation.navigate('profile');
+                setIsModalVisible(false);
+                toggleMenu();
+              }
+              }>
               <Text style={styles.options}>
                 <Search name={'search'} size={22} color={'grey'} />   Search
               </Text>
             </TouchableOpacity>
             {/* Check if the user's job role is 'employee' or 'entrepreneur' */}
-            {(jobOption === 'Employee' || jobOption === 'Entrepreneur') && (
-              <>
+            {/* {(jobOption === 'Employee' || jobOption === 'Entrepreneur') && (
+              <> */}
                 <View style={styles.line}></View>
                 <TouchableOpacity
-                  onPress={() =>
-                    navigation.navigate('Myvideos', {userName, userId})
+                  onPress={() => {
+                    navigation.navigate('Myvideos', {userName, userId});
+                    toggleMenu();
+                  }
                   }>
                   <Text style={styles.options}>
-                    <Video name={'video'} size={22} color={'grey'} />    Videos
+                    <Video name={'video'} size={22} color={'grey'} />   Videos
                   </Text>
                 </TouchableOpacity>
-              </>
-            )}
-            {/* <View style={styles.line}></View>
-            <TouchableOpacity onPress={''}>
-              <Text style={styles.options}>
-                <Video name={'comment-video'} size={22} color={'grey'} />{' '}
-                Tutorial Video
-              </Text>
-            </TouchableOpacity> */}
-            {/* <View style={styles.line}></View>
-            <TouchableOpacity onPress={''}>
-              <Text style={styles.options}>
-                <Faq name={'questioncircle'} size={20} color={'grey'} /> FAQ
-              </Text>
-            </TouchableOpacity> */}
+              {/* </>
+            )} */}
             <View style={styles.line}></View>
-            <TouchableOpacity onPress={logouts}>
+            <TouchableOpacity onPress={() => {
+              openTutorial();
+              toggleMenu();
+            }}>
               <Text style={styles.options}>
-                <Logout name={'logout'} size={20} color={'grey'} />     Logout
-              </Text> 
+                <Video name={'comment-video'} size={22} color={'grey'} />   Tutorial Video
+              </Text>
             </TouchableOpacity>
             <View style={styles.line}></View>
-            <TouchableOpacity onPress={openPrivacyPolicy}>
+            <TouchableOpacity onPress={() => {
+              openFaq();
+              toggleMenu();
+            }}>
               <Text style={styles.options}>
-                <Privacy name={'privacy-tip'} size={20} color={'grey'} />     Privacy Policy
+                <Faq name={'questioncircle'} size={20} color={'grey'} />   FAQ
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.line}></View>
+            <TouchableOpacity onPress={() => {
+              logouts();
+              toggleMenu();
+            }}>
+              <Text style={styles.options}>
+                <Logout name={'logout'} size={20} color={'grey'} />   Logout
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.line}></View>
+            <TouchableOpacity onPress={() => {
+              openPrivacyPolicy();
+              toggleMenu();
+            }}>
+              <Text style={styles.options}>
+                <Privacy name={'privacy-tip'} size={20} color={'grey'} />   Privacy Policy
               </Text>
             </TouchableOpacity>
             <View style={styles.line}></View>
@@ -318,6 +346,7 @@ const Header = ({Value, profile, userName, userId}) => {
     </ImageBackground>
   );
 };
+
 
 const styles = StyleSheet.create({
   header: {
@@ -405,10 +434,10 @@ const styles = StyleSheet.create({
     marginBottom:10,
     marginTop:50,
     marginRight:10,
-    height:30,
-    width:30,
-    borderWidth:1,
-    borderRadius:50,
+    //height:30,
+    //width:30,
+    //borderWidth:1,
+    //borderRadius:50,
     elevation:10,
   },
   closeButtonText: {

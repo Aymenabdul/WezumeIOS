@@ -48,6 +48,7 @@ const SignupScreen = () => {
   const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
   const [languageSearchText, setLanguageSearchText] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(null);
+  const [isImageUploaded, setIsImageUploaded] = useState(false); // New state for upload status
   const availableLanguages = [
     'English',
     'Hindi',
@@ -138,7 +139,6 @@ const SignupScreen = () => {
       setLanguages([...languages, '']);
     }
   };
-
   const handleLanguageChange = (text, index) => {
     const newLanguages = [...languages];
     newLanguages[index] = text;
@@ -256,7 +256,6 @@ const SignupScreen = () => {
         headers: {'Content-Type': 'application/json'},
         timeout: 10000,
       });
-      console.log('User created:', response.data);
       Alert.alert(
         'Success',
         'Registration successful! Please check your email for verification.',
@@ -294,16 +293,14 @@ const SignupScreen = () => {
       setLoading(false);
     }
   };
-  const checkIfEmailExists = async () => {
-    console.log('Checking email:', email); // Log the email you're checking
+  const checkIfEmailExists = async (email) => {
     try {
       const response = await axios.post(
         `${env.baseURL}/users/check-email`,
         {email}, // Wrapping email in an object
         {headers: {'Content-Type': 'application/json'}},
       );
-      console.log('Response from email check:', response.data); // Log the response from backend
-      return response.data.exists; // Assuming the response returns { exists: true/false }
+      return response.data.exists;
     } catch (error) {
       console.error('Error checking email:', error);
       return false;
@@ -317,21 +314,17 @@ const SignupScreen = () => {
         {email},
         {headers: {'Content-Type': 'application/json'}},
       );
-      console.log('Response from public email check:', response.data);
-
-      // Check if the backend returned an error indicating a public domain email
       if (response.data.error === 'Public email domains are not allowed') {
-        return true; // Email is from a public domain
+        return true;
       }
-      return false; // Email is valid
+      return false;
     } catch (error) {
       console.error('Error checking public email:', error);
-      return false; // Default to valid email if there's an error
+      return false;
     }
   };
 
-  const checkIfPhoneExists = async () => {
-    console.log('Checking phoneNumber:', phoneNumber);
+  const checkIfPhoneExists = async (phoneNumber) => {
     try {
       const response = await axios.post(
         `${env.baseURL}/users/check-phone`,
@@ -340,8 +333,7 @@ const SignupScreen = () => {
           headers: {'Content-Type': 'application/json'},
         },
       );
-      console.log('Response from phonenumber check:', response.data);
-      return response.data; // Returns true if phone exists, false otherwise
+      return response.data;
     } catch (error) {
       console.error('Error checking phone number:', error);
       return false;
@@ -351,23 +343,23 @@ const SignupScreen = () => {
   const handleProfilePic = async () => {
     launchImageLibrary({mediaType: 'photo'}, async response => {
       if (response.didCancel) {
-        console.log('User canceled image picker');
+        setIsImageUploaded(false); // Reset if canceled
       } else if (response.errorMessage) {
         console.error('ImagePicker error: ', response.errorMessage);
+        setIsImageUploaded(false); // Reset on error
       } else if (response.assets && response.assets.length > 0) {
         const imageUri = response.assets[0].uri;
         try {
-          // Convert image to Base64 string
           const base64String = await RNFS.readFile(imageUri, 'base64');
-          // Remove any prefix
           const cleanBase64String = base64String.replace(
             /^data:image\/\w+;base64,/,
             '',
           );
-          // Now you can set the cleanBase64String to your form data
           setBase64Image(cleanBase64String);
+          setIsImageUploaded(true); // Set to true when image is successfully uploaded
         } catch (error) {
           console.error('Error converting image to Base64: ', error);
+          setIsImageUploaded(false); // Reset on error
         }
       }
     });
@@ -384,7 +376,7 @@ const SignupScreen = () => {
         <Text style={styles.title}>SignUp</Text>
         {/* scrollView */}
         <ScrollView
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={true}
           style={{height: '40%', width: '100%'}}
           contentContainerStyle={{flexGrow: 1, paddingBottom: 20}}>
           {/* <Text style={styles.loginsub}>Create an account so you can explore all the existing jobs.</Text> */}
@@ -425,7 +417,7 @@ const SignupScreen = () => {
             onValueChange={itemValue => setJobOption(itemValue)}>
             <Picker.Item
               style={{fontSize: 16}}
-              label="  Select your role"
+              label="  Scroll to select your role"
               value=""
             />
             <Picker.Item
@@ -661,7 +653,7 @@ const SignupScreen = () => {
                     <TouchableOpacity
                       onPress={() => removeLanguageField(index)}
                       style={styles.removeButton}>
-                      <Text style={styles.removeButtonText}>Remove</Text>
+                      <Text style={styles.removeButtonText}>X</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1032,8 +1024,13 @@ const SignupScreen = () => {
           {/* Profile Picture Upload Button */}
           <TouchableOpacity
             onPress={handleProfilePic}
-            style={styles.uploadButton}>
-            <Text style={styles.uploadButtonText}>Upload Profile Picture</Text>
+            style={[
+              styles.uploadButton,
+              isImageUploaded && {backgroundColor: 'green'}, // Change color to green if uploaded
+            ]}>
+            <Text style={styles.uploadButtonText}>
+              {isImageUploaded ? 'Image Uploaded' : 'Upload Profile Picture'}
+            </Text>
             <UploadImage name={'file-image-plus'} size={20} color={'white'} />
           </TouchableOpacity>
           {/* </> */}
@@ -1060,13 +1057,14 @@ const SignupScreen = () => {
         {/* Navigation to Login Screen */}
         <TouchableOpacity onPress={() => navigation.navigate('LoginScreen')}>
           <Text style={styles.logAccount}>
-            Already Have An Account? <Text style={{color: 'blue'}}>Login</Text>
+            Already have an account? <Text style={{color: 'blue'}}>Login</Text>
           </Text>
         </TouchableOpacity>
       </LinearGradient>
     </FastImage>
   );
 };
+
 
 const styles = StyleSheet.create({
   backgroundImage: {

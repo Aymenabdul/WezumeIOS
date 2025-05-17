@@ -8,14 +8,12 @@
 	<string>wezume</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
-	<key>LSApplicationCategoryType</key>
-	<string></string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
@@ -24,8 +22,23 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.kumaran.wezume</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>app</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationCategoryType</key>
+	<string></string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -34,23 +47,25 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>wezume.in</key>
+			<key>app.wezume.in</key>
 			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
 				<key>NSIncludesSubdomains</key>
 				<true/>
-				<key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-        <key>ITSAppUsesNonExemptEncryption</key>
-        <false/>
 			</dict>
 		</dict>
 	</dict>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>We need access to your music library to enhance your profile video.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>We need access to your camera for recording video.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>We need access to your contacts to connect with other users through the app.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>We need access to your documents folder for saving files.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-  <string>We need access to your location to share location-based profile views.</string>
+	<string>We need access to your location to share location-based profile views.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>We need access to your microphone for recording audio.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -59,10 +74,6 @@
 	<string>We need access to your photos for saving and accessing media.</string>
 	<key>NSUserNotificationUsageDescription</key>
 	<string>We need permission to send you notifications for updates and alerts.</string>
-  <key>NSAppleMusicUsageDescription</key>
-  <string>We need access to your music library to enhance your profile video.</string>
-  <key>NSContactsUsageDescription</key>
-  <string>We need access to your contacts to connect with other users through the app.</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>AntDesign.ttf</string>
@@ -99,5 +110,9 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:wezume.in</string>
+	</array>
 </dict>
 </plist>

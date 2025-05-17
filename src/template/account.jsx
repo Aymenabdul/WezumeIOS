@@ -216,7 +216,7 @@ const ProfileScreen = () => {
         source={require('./assets/login.jpg')}
         style={styles.bodycont}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Back name={'back'} size={20} style={styles.backoption} />
+          <Back name={'leftcircle'} size={24} style={styles.backoption} />
         </TouchableOpacity>
       </ImageBackground>
       <View style={styles.container}>
@@ -237,7 +237,6 @@ const ProfileScreen = () => {
         <TouchableOpacity style={styles.editProfileButton} onPress={()=> navigation.navigate('Edit')}>
           <Text style={styles.editProfileText}>Edit Profile</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.editProfileButton} onPress={DeleteLink}>
           <Text style={styles.editProfileText}>Delete Account</Text>
         </TouchableOpacity>
@@ -254,7 +253,7 @@ const ProfileScreen = () => {
           </View>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>
-              <Phone name={'mobile-phone'} size={22} /> PhoneNumber
+              <Phone name={'mobile-phone'} size={22} /> Phone Number
             </Text>
             <Text style={styles.sectionContent}>{phoneNumber}</Text>
           </View>
@@ -345,13 +344,13 @@ const ProfileScreen = () => {
            <>
            <View style={styles.section}>
             <Text style={styles.sectionTitle}>
-              <Lang name={'language'} size={18} /> Keyskills
+              <Lang name={'language'} size={18} /> Key Skills
             </Text>
             <Text style={styles.sectionContent}>{skills}</Text>
           </View>
            <View style={styles.section}>
             <Text style={styles.sectionTitle}>
-              <Lang name={'language'} size={18} /> current Roll
+              <Lang name={'language'} size={18} /> Current Role
             </Text>
             <Text style={styles.sectionContent}>{currentRole}</Text>
           </View>
