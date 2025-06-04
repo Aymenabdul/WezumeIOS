@@ -161,31 +161,71 @@ const Scoring = () => {
   };
 
   const getHashtags = score => {
-    if (Clarity < 4) return ['#Fragmented'];
-    if (Clarity >= 4 && Clarity <= 6) return ['#Improving'];
-    if (Clarity > 6 && Clarity <= 8) return ['#Fluent'];
+    const clarity = score?.Clarity ?? 0;
+    if (clarity < 4) {
+      const tags = ['#Fragmented', '#Unclear', '#Fuzzy'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    if (clarity >= 4 && clarity <= 6) {
+      const tags = ['#Improving', '#Understandable', '#Coherent'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    if (clarity > 6 && clarity <= 8) {
+      const tags = ['#Fluent', '#Clear', '#Articulate'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
     return ['#Articulate'];
   };
 
   const getHashtags1 = score => {
-    if (Confidence < 4) return ['#Hesitant'];
-    if (Confidence >= 4 && Confidence <= 6) return ['#Cpmposed'];
-    if (Confidence > 6 && Confidence <= 8) return ['#poised'];
+    const confidence = score?.Confidence ?? 0;
+    if (confidence < 4) {
+      const tags = ['#Hesitant', '#Unsteady', '#Reserved'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    if (confidence >= 4 && confidence <= 6) {
+      const tags = ['#Composed', '#Balanced', '#Steady'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    if (confidence > 6 && confidence <= 8) {
+      const tags = ['#Poised'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
     return ['#Assured'];
   };
 
   const getHashtags2 = score => {
-    if (Authenticity < 4) return ['#Guarded'];
-    if (Authenticity >= 4 && Authenticity <= 6) return ['#Distant'];
-    if (Authenticity > 6 && Authenticity <= 8) return ['#Natural'];
+    const authenticity = score?.Authenticity ?? 0;
+    if (authenticity < 4) {
+      const tags = ['#Guarded', '#Mechanical', '#Distant'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    if (authenticity >= 4 && authenticity <= 6) {
+      const tags = ['#Honest', '#Sincere', '#Natural'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    if (authenticity > 6 && authenticity <= 8) {
+      const tags = ['#Natural'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
     return ['#Genuine'];
   };
 
   const getHashtags3 = score => {
-    if (emotional < 4) return ['#Disconnected'];
-    if (emotional >= 4 && emotional <= 6) return ['#Detached',];
-    if (emotional > 6 && emotional <= 8) return ['#Thoughtful'];
-    return ['#Empathic'];
+    const emotional = score?.EmotionalExpressiveness ?? 0;
+    if (emotional < 4) {
+      const tags = ['#Disconnected', '#Flat', '#Detached'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    if (emotional >= 4 && emotional <= 6) {
+      const tags = ['#In-Tune', '#Observant', '#Thoughtful'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    if (emotional > 6 && emotional <= 8) {
+      const tags = ['#Empathic'];
+      return [tags[Math.floor(Math.random() * tags.length)]];
+    }
+    return ['#Expressive'];
   };
 
   const clarity = Math.round((Clarity / 10) * 100);
@@ -346,7 +386,7 @@ const Scoring = () => {
           </View>
         </View>
         <View style={styles.section3}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap'}}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
             <View
               style={{
                 marginTop: '2%',

@@ -54,6 +54,22 @@ const Home1 = () => {
   const [videoFetched, setVideoFetched] = useState(false); // Add state to track if video is fetched
   const [analysisDone, setAnalysisDone] = useState(false);
   const subtitlesUrl = `${env.baseURL}/api/videos/${userId}/subtitles.srt`;
+
+  useEffect(() => {
+  const sendHeartbeat = () => {
+    axios.post(`${env.baseURL}/api/heartbeat`, { userId })
+      .then(() => console.log('Heartbeat sent'))
+      .catch(err => console.error('Heartbeat failed', err));
+  };
+
+  sendHeartbeat(); // send one immediately on mount
+
+  const interval = setInterval(sendHeartbeat, 60 * 1000); // every 5 mins
+
+  return () => clearInterval(interval); // cleanup on unmount
+}, [userId]); // include userId as dependency
+
+
   const parseTimeToSeconds = timeStr => {
     const [hours, minutes, seconds] = timeStr.split(':');
     const [sec, milli] = seconds.split(',');

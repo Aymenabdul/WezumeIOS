@@ -26,6 +26,7 @@ import HomeSwipe from './src/template/homeSwipe';
 import LikeSwipe from './src/template/likeSwipe';
 import TrendSwipe from './src/template/trendSwipe';
 import MySwipe from './src/template/mySwipe';
+import AnalyticScreen from './src/template/Analytics';
 import FilterSwipe from './src/template/filterSwipe';
 import ScoringScreen from './src/template/scoring';
 const Stack = createNativeStackNavigator();
@@ -163,6 +164,7 @@ const App = () => {
         <Stack.Screen name="TrendSwipe" component={TrendSwipe} />
         <Stack.Screen name="LikeSwipe" component={LikeSwipe} />
         <Stack.Screen name="ScoringScreen" component={ScoringScreen} />
+        <Stack.Screen name="AnalyticScreen" component={AnalyticScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

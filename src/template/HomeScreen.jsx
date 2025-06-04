@@ -44,6 +44,20 @@ const HomeScreen = () => {
   }, []);
 
   useEffect(() => {
+  const sendHeartbeat = () => {
+    axios.post(`${env.baseURL}/api/heartbeat`, { userId })
+      .then(() => console.log('Heartbeat sent'))
+      .catch(err => console.error('Heartbeat failed', err));
+  };
+
+  sendHeartbeat(); // send one immediately on mount
+
+  const interval = setInterval(sendHeartbeat, 60 * 1000); // every 5 mins
+
+  return () => clearInterval(interval); // cleanup on unmount
+}, [userId]); // include userId as dependency
+
+  useEffect(() => {
     const loadDataFromStorage = async () => {
       try {
         // Retrieve values from AsyncStorage

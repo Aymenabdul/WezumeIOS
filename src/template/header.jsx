@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,9 +12,10 @@ import {
   FlatList,
   Linking,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import User from 'react-native-vector-icons/FontAwesome';
 import Menu from 'react-native-vector-icons/AntDesign';
+import Analytic from 'react-native-vector-icons/MaterialCommunityIcons';
 import Search from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-vector-icons/Foundation';
 import Faq from 'react-native-vector-icons/AntDesign';
@@ -23,15 +24,16 @@ import Noti from 'react-native-vector-icons/FontAwesome';
 import Privacy from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const {width} = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-const Header = ({Value, profile, userName, userId}) => {
+const Header = ({ Value, profile, userName, userId }) => {
   const navigation = useNavigation();
   const [menuVisible, setMenuVisible] = useState(false);
   const slideAnimation = useRef(new Animated.Value(width)).current; // Initial position off-screen to the left
   const [notifications, setNotifications] = useState([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [jobOption, setJobOption] = useState();
+  const [email,setEmail] = useState();
 
   const logouts = async () => {
     try {
@@ -75,7 +77,9 @@ const Header = ({Value, profile, userName, userId}) => {
       try {
         // Retrieve values from AsyncStorage
         const apiJobOption = await AsyncStorage.getItem('jobOption');
+        const apiEmail = await AsyncStorage.getItem('email');
         // Set state with retrieved data
+        setEmail(apiEmail);
         setJobOption(apiJobOption);
       } catch (error) {
         console.error('Error loading user data from AsyncStorage', error);
@@ -172,10 +176,10 @@ const Header = ({Value, profile, userName, userId}) => {
       <View style={styles.profileSection}>
         <TouchableOpacity
           onPress={() => navigation.navigate('Account')}
-          style={{flexDirection: 'row'}}>
+          style={{ flexDirection: 'row' }}>
           <View style={styles.profileContainer}>
             {profile ? (
-              <Image source={{uri: profile}} style={styles.profileImage} />
+              <Image source={{ uri: profile }} style={styles.profileImage} />
             ) : (
               <User name="user" color="#ffffff" size={30} />
             )}
@@ -209,7 +213,7 @@ const Header = ({Value, profile, userName, userId}) => {
           <Animated.View
             style={[
               styles.modalMenu,
-              {transform: [{translateX: slideAnimation}]},
+              { transform: [{ translateX: slideAnimation }] },
             ]}>
             <TouchableOpacity style={styles.closeButton} onPress={toggleMenu}>
               <Text style={styles.closeButtonText}>X</Text>
@@ -237,18 +241,29 @@ const Header = ({Value, profile, userName, userId}) => {
             {/* Check if the user's job role is 'employee' or 'entrepreneur' */}
             {/* {(jobOption === 'Employee' || jobOption === 'Entrepreneur') && (
               <> */}
-                <View style={styles.line}></View>
-                <TouchableOpacity
-                  onPress={() => {
-                    navigation.navigate('Myvideos', {userName, userId});
-                    toggleMenu();
-                  }
-                  }>
-                  <Text style={styles.options}>
-                    <Video name={'video'} size={22} color={'grey'} />   Videos
-                  </Text>
-                </TouchableOpacity>
-              {/* </>
+            <View style={styles.line}></View>
+            {email === 'pitch@wezume.com' && (
+              <><TouchableOpacity
+                onPress={() => {
+                  navigation.navigate('AnalyticScreen');
+                  toggleMenu();
+                }}>
+                <Text style={styles.options}>
+                  <Analytic name={'google-analytics'} size={22} color={'grey'} /> Analytics
+                </Text>
+              </TouchableOpacity><View style={styles.line}></View></>
+            )}
+            <TouchableOpacity
+              onPress={() => {
+                navigation.navigate('Myvideos', { userName, userId });
+                toggleMenu();
+              }
+              }>
+              <Text style={styles.options}>
+                <Video name={'video'} size={22} color={'grey'} />   Videos
+              </Text>
+            </TouchableOpacity>
+            {/* </>
             )} */}
             <View style={styles.line}></View>
             <TouchableOpacity onPress={() => {
@@ -295,7 +310,7 @@ const Header = ({Value, profile, userName, userId}) => {
         transparent={false} // Full-screen modal
         animationType="slide"
         onRequestClose={() => setIsModalVisible(false)}>
-        <View style={{flex: 1, backgroundColor: 'white', padding: 20}}>
+        <View style={{ flex: 1, backgroundColor: 'white', padding: 20 }}>
           <Text
             style={{
               fontSize: 22,
@@ -308,15 +323,15 @@ const Header = ({Value, profile, userName, userId}) => {
           <FlatList
             data={notifications}
             keyExtractor={(item, index) => index.toString()}
-            renderItem={({item}) => (
+            renderItem={({ item }) => (
               <View style={styles.noticont}>
-                <Text style={{fontSize: 16}}>
+                <Text style={{ fontSize: 16 }}>
                   {item.firstName} ❤️ liked your video.
                 </Text>
               </View>
             )}
           />
-          <View style={{marginTop: 20}}>
+          <View style={{ marginTop: 20 }}>
             <TouchableOpacity
               style={{
                 backgroundColor: '#FF0000',
@@ -326,7 +341,7 @@ const Header = ({Value, profile, userName, userId}) => {
                 marginBottom: 10,
               }}
               onPress={clearNotifications}>
-              <Text style={{color: 'white', fontSize: 16}}>
+              <Text style={{ color: 'white', fontSize: 16 }}>
                 Clear Notifications
               </Text>
             </TouchableOpacity>
@@ -338,7 +353,7 @@ const Header = ({Value, profile, userName, userId}) => {
                 alignItems: 'center',
               }}
               onPress={() => setIsModalVisible(false)}>
-              <Text style={{color: 'white', fontSize: 16}}>Close</Text>
+              <Text style={{ color: 'white', fontSize: 16 }}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -357,10 +372,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     elevation: 4,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    height:110,
+    height: 110,
     zIndex: 100,
   },
   profileSection: {
@@ -368,8 +383,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop:15,
-    marginBottom:-2,
+    marginTop: 15,
+    marginBottom: -2,
   },
   profileContainer: {
     borderRadius: 20,
@@ -382,7 +397,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     elevation: 20,
   },
-  profileImage: {     
+  profileImage: {
     width: '100%',
     height: '100%',
   },
@@ -404,7 +419,7 @@ const styles = StyleSheet.create({
   },
   menuButton: {
     marginRight: '5%',
-    marginTop:15,
+    marginTop: 15,
     zIndex: 10,
   },
   modalOverlay: {
@@ -431,28 +446,28 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     alignSelf: 'flex-end',
-    marginBottom:10,
-    marginTop:50,
-    marginRight:10,
+    marginBottom: 10,
+    marginTop: 50,
+    marginRight: 10,
     //height:30,
     //width:30,
     //borderWidth:1,
     //borderRadius:50,
-    elevation:10,
+    elevation: 10,
   },
   closeButtonText: {
-    fontSize:20,
+    fontSize: 20,
     fontWeight: '800',
     color: '#000',
-    textAlign:'center',
-    paddingTop:3,
-    elevation:10,
+    textAlign: 'center',
+    paddingTop: 3,
+    elevation: 10,
   },
   options: {
-    fontSize:20,
+    fontSize: 20,
     margin: 10,
     color: '#000',
-    fontWeight:'500',
+    fontWeight: '500',
   },
   line: {
     width: '90%', // Adjusted to span across most of the modal
@@ -473,7 +488,7 @@ const styles = StyleSheet.create({
   },
   noti: {
     marginLeft: '30%',
-    marginTop:15,
+    marginTop: 15,
   },
 });
 
