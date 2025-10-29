@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,530 +8,591 @@ import {
   StyleSheet,
   Platform,
   Alert,
-  Button,
+  TextInput,
+  StatusBar,
+  Linking,
 } from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
-import {
-  Camera,
-  useCameraDevice,
-  useCameraPermission,
-  useCameraFormat,
-} from 'react-native-vision-camera';
-import Flash from 'react-native-vector-icons/MaterialIcons';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { BlurView } from '@react-native-community/blur';
 import Video from 'react-native-video';
-import Media from 'react-native-vector-icons/Entypo';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import AntDesign from 'react-native-vector-icons/AntDesign';
-import {request, PERMISSIONS, RESULTS} from 'react-native-permissions';
+import Svg, { Circle } from 'react-native-svg';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import axios from 'axios';
 import env from './env';
+import apiClient from './api';
 
-const CameraPage = () => {
-  const navigation = useNavigation();
-  const route = useRoute();
-  const {userId} = route.params || null;
-  console.log('UserId passed:', userId); // Log UserId
-
-  const [isRecording, setIsRecording] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [currentTimer, setCurrentTimer] = useState(60); // 30-second timer
-  const [onFlash, setOnFlash] = useState('off');
-  const [videoPath, setVideoPath] = useState(null); // Store video path
-  const [showModal, setShowModal] = useState(false); // Modal visibility
-  const [isUploading, setUploading] = useState(false);
-  const [isFrontCamera, setIsFrontCamera] = useState(false);
-  const [videoUri, setVideoUri] = useState('');
-  const [videos, setVideos] = useState([]);
-  const cameraRef = useRef(null);
-  const {hasPermission, requestPermission} = useCameraPermission();
-  let timerInterval = useRef(null);
-  const device = useCameraDevice(isFrontCamera ? 'front' : 'back');
-  const [uploadProgress, setUploadProgress] = useState(0);
-
-  const format = useCameraFormat(device, [{fps:60}]);
-  //const fps = format.minFps;
-
-  // Trigger the alert when the component is mounted (camera screen entered)
-  useEffect(() => {
-    Alert.alert(
-      'Note',
-      'The video needs to be recorded for more than 30 seconds to upload.',
-      [{text: 'OK', onPress: () => console.log('OK Pressed')}],
-      {cancelable: false},
-    );
-  }, []);
-
-  useEffect(() => {
-    const requestPermissions = async () => {
-      try {
-        let cameraStatus, microphoneStatus, storageStatus;
-
-        if (Platform.OS === 'ios') {
-          cameraStatus = await request(PERMISSIONS.IOS.CAMERA);
-          microphoneStatus = await request(PERMISSIONS.IOS.MICROPHONE);
-          storageStatus = await request(PERMISSIONS.IOS.PHOTO_LIBRARY);
-        } else if (Platform.OS === 'android') {
-          cameraStatus = await request(PERMISSIONS.ANDROID.CAMERA);
-          microphoneStatus = await request(PERMISSIONS.ANDROID.RECORD_AUDIO);
-          storageStatus = await request(PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE);
-        }
-
-        console.log('Camera permission:', cameraStatus);
-        console.log('Microphone permission:', microphoneStatus);
-        console.log('Storage permission:', storageStatus);
-
-        if (
-          cameraStatus === RESULTS.GRANTED &&
-          microphoneStatus === RESULTS.GRANTED &&
-          storageStatus === RESULTS.GRANTED
-        ) {
-          console.log('All permissions granted');
-        } else {
-          console.warn('Some permissions are denied');
-        }
-      } catch (error) {
-        console.error('Error requesting permissions:', error);
-      }
-    };
-
-    // Request permissions on component mount
-    requestPermissions();
-  }, []);// Replace with your component's UI 
-
-  useEffect(() => {
-    if (!hasPermission) {
-      requestPermission();
-    }
-  }, [hasPermission, requestPermission]);
-  // Debug log for permission status
-  console.log('Camera permission:', hasPermission);
-
-  if (!device) {
-    console.log('No camera device found.');
-    return (
-      <ActivityIndicator
-        style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}
-      />
-    );
-  }
-  // Debug log for permission status
-  console.log('Camera permission:', hasPermission);
-
-  if (!device) {
-    console.log('No camera device found.');
-    return (
-      <ActivityIndicator
-        style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}
-      />
-    );
-  }
-
-  const generateRandomFileName = () => {
-    const timestamp = Date.now(); // Get the current timestamp
-    const randomString = Math.random().toString(36).substring(2, 15); // Generate a random string
-    return `${timestamp}_${randomString}.mp4`; // Combine timestamp and random string to form a unique file name
-  };
-  const handleUploadVideo = async () => {
-    const randomFileName = generateRandomFileName();
-    if (!videoUri) {
-      alert('No video found to upload.');
-      return;
-    }
-
-    setUploading(true);
-    setUploadProgress(0); // Reset progress when starting upload
-
-    let formattedUri =
-      Platform.OS === 'android' ? 'file://' + videoUri : videoUri;
-
-    try {
-      const formData = new FormData();
-      formData.append('file', {
-        uri: formattedUri,
-        type: 'video/mp4',
-        name: randomFileName,
-      });
-      formData.append('userId', userId);
-
-      const response = await axios.post(
-        `${env.baseURL}/api/videos/upload`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          onUploadProgress: progressEvent => {
-            const percent = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total,
-            );
-            setUploadProgress(percent); // Update the progress state
-          },
-        },
-      );
-
-      console.log('Upload Response', response);
-
-      const {filePath, fileName, id} = response.data;
-      if (filePath && id) {
-        alert('Video uploaded successfully!');
-        const videoUrl = `${env.baseURL}/${filePath.replace(/\\/g, '/')}`;
-        const newvideos = {
-          id,
-          name: fileName,
-          url: videoUrl,
-        };
-
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'Transcribe',
-              params: {userId, videos: [...videos, newvideos]},
-            },
-          ],
-        });
-        setCurrentTimer(60); // Reset the timer
-        setUploading(false);
-      } else {
-        alert('Unexpected response from server. Missing required fields.');
-      }
-    } catch (error) {
-      alert('Error uploading video. Please try again.');
-    }
-  };
-
-  const startRecording = async () => {
-    if (cameraRef.current && !isRecording) {
-      try {
-        setIsRecording(true);
-        setIsPaused(false);
-
-        console.log('Starting recording...');
-        cameraRef.current.startRecording({
-          onRecordingFinished: async video => {
-            console.log('Recording finished. Video saved at:', video.path);
-            setVideoPath(video.path);
-            setVideoUri(video.path);
-            setIsRecording(false);
-          },
-          onRecordingError: error => {
-            console.error('Recording error:', error);
-            setIsRecording(false);
-          },
-        });
-
-        // Set a countdown timer for 30 seconds
-        timerInterval.current = setInterval(() => {
-          setCurrentTimer(prev => {
-            if (prev === 1) {
-              clearInterval(timerInterval.current);
-              stopRecording();
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      } catch (error) {
-        console.error('Error starting recording:', error);
-        setIsRecording(false);
-      }
-    } else {
-      console.warn('Camera reference is not available or already recording.');
-    }
-  };
-
-  const stopRecording = async () => {
-    if (cameraRef.current) {
-      console.log('Stopping recording...');
-      await cameraRef.current.stopRecording();
-      setIsRecording(false);
-      setIsPaused(false);
-      clearInterval(timerInterval.current);
-    }
-  };
+const UploadProgressCircle = ({ progress }) => {
+  const size = 120;
+  const strokeWidth = 10;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
 
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#000',
-      }}>
-      <Camera
-        ref={cameraRef}
-        device={device}
-        isActive={true}
-        style={{position: 'absolute', height: '100%', width: '100%'}}
-        video={true}
-        audio={true} // Ensure audio is enabled
-        torch={onFlash}
-        // format={format}
-        // fps={fps}
-      />
-
-      {/* Flash Toggle */}
-      <TouchableOpacity
-        style={styles.flashButton}
-        onPress={() =>
-          setOnFlash(currentVal => (currentVal === 'off' ? 'on' : 'off'))
-        }>
-        <Flash
-          name={onFlash === 'off' ? 'flash-on' : 'flash-off'}
-          color="white"
-          size={30}
+    <View style={styles.upload.progressContainer}>
+      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <Circle
+          stroke="#555"
+          fill="none"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          strokeWidth={strokeWidth}
         />
-      </TouchableOpacity>
-
-      {/* Exit Button */}
-      <TouchableOpacity
-        style={styles.exitButton}
-        onPress={() => navigation.goBack()}>
-        <Text style={styles.exitText}>X</Text>
-      </TouchableOpacity>
-      {/* Camera Switch Button */}
-      <TouchableOpacity
-        style={styles.switchCameraButton}
-        onPress={() => setIsFrontCamera(prev => !prev)}>
-        <MaterialCommunityIcons
-          name={'camera-flip-outline'}
-          size={35}
-          style={styles.camicon}
+        <Circle
+          stroke="#fff"
+          fill="none"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.infoButton}>
-        <AntDesign name={'infocirlce'} size={30} style={styles.infoicon} />
-      </TouchableOpacity>
-
-      {/* Timer */}
-      <View style={styles.timer}>
-        <Text style={styles.timerText}>
-          {isRecording ? currentTimer.toString().padStart(2, '0') : '00:60'}
-        </Text>
-      </View>
-      {/* Record Button */}
-      <TouchableOpacity
-        style={[
-          styles.recordButton,
-          isRecording ? styles.recording : styles.notRecording,
-        ]}
-        onPress={isRecording ? stopRecording : startRecording}>
-        <View style={styles.innerCircle}></View>
-      </TouchableOpacity>
-
-      {/* Modal for Playback */}
-      {videoPath && (
-        <Modal
-          animationType="slide"
-          transparent={false}
-          visible={showModal}
-          onRequestClose={() => setShowModal(false)}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalHeader}>Play Recorded Video</Text>
-            <Video
-              source={{uri: videoPath}}
-              style={styles.videoPlayer}
-              controls={true}
-              resizeMode="contain"
-            />
-            <View
-              style={{
-                justifyContent: 'space-around',
-                alignItems: 'center',
-                flexDirection: 'row',
-                width: '100%',
-              }}>
-              <TouchableOpacity
-                style={styles.closeModalButton}
-                onPress={() => {
-                  setShowModal(false); // Close the modal
-                  setCurrentTimer(60); // Reset the timer
-                }}>
-                <Text style={styles.closeModalText}>Redo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleUploadVideo}
-                style={{
-                  backgroundColor: 'green',
-                  padding: 10,
-                  borderRadius: 5,
-                  marginTop: 20,
-                }}>
-                <Text style={styles.closeModalText}>Upload</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          {/* Loading Spinner */}
-                   
-      {isUploading && (
-        <View style={styles.uploadingOverlay}>
-          <ActivityIndicator size="large" color="white" />
-          <Text style={styles.uploadingText}>
-            Uploading... {uploadProgress}%
-          </Text>
-          {/* Displaying the progress here */}
-        </View>
-      )}
-
-        </Modal>
-      )}
-
-      {/* Show Modal Button */}
-      {videoPath && !isRecording && currentTimer <= 30 && (
-        <TouchableOpacity
-          style={styles.showModalButton}
-          onPress={() => setShowModal(true)}>
-          <Media name="eye" size={35} color={'white'} />
-          <Text style={{color: '#ffffff', marginLeft: -8}}>preview</Text>
-          {/* <View>{handleAlert}</View> */}
-        </TouchableOpacity>
-      )}
-
-      {/* Loading Spinner */}
-      {isUploading && (
-        <View style={styles.uploadingOverlay}>
-          <ActivityIndicator size="large" color="white" />
-          <Text style={styles.uploadingText}>Uploading...</Text>
-        </View>
+      </Svg>
+      {progress < 100 && (
+          <Text style={styles.upload.progressText}>{`${progress.toFixed(1)}%`}</Text>
       )}
     </View>
   );
 };
 
+const CameraPage = () => {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { userId, roleCode, college } = route.params || {};
+  
+  const [isRecording, setIsRecording] = useState(false);
+  const [currentTimer, setCurrentTimer] = useState(0);
+  const [onFlash, setOnFlash] = useState('off');
+  const [videoPath, setVideoPath] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [isUploading, setUploading] = useState(false);
+  const [isFrontCamera, setIsFrontCamera] = useState(false);
+  const [showJobIdPrompt, setShowJobIdPrompt] = useState(true);
+  const [jobId, setJobId] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const { hasPermission: hasCameraPermission, requestPermission: requestCameraPermission } = useCameraPermission();
+  const [hasMicrophonePermission, setHasMicrophonePermission] = useState(false);
+
+  const cameraRef = useRef(null);
+  const timerInterval = useRef(null);
+  const device = useCameraDevice(isFrontCamera ? 'front' : 'back');
+  
+  useEffect(() => {
+    const checkPermissions = async () => {
+      const microphoneStatus = await Camera.getMicrophonePermissionStatus();
+      setHasMicrophonePermission(microphoneStatus === 'granted');
+    };
+    checkPermissions();
+  }, []);
+
+  const showPermissionsAlert = () => {
+    Alert.alert(
+      'Permissions Required',
+      'To record videos, the app needs access to your Camera and Microphone. Please grant permissions in your device settings.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => Linking.openSettings() },
+      ]
+    );
+  };
+
+  const handleRequestPermission = useCallback(async () => {
+    const cameraResult = await requestCameraPermission();
+    if (!cameraResult) {
+      showPermissionsAlert();
+      return;
+    }
+    
+    const microphoneResult = await Camera.requestMicrophonePermission();
+    if (!microphoneResult) {
+      showPermissionsAlert();
+      return;
+    }
+
+    setHasMicrophonePermission(true);
+  }, [requestCameraPermission]);
+
+  const stopRecording = useCallback(async () => {
+    if (cameraRef.current) {
+      await cameraRef.current.stopRecording();
+    }
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    if (cameraRef.current && !isRecording) {
+      setIsRecording(true);
+      setCurrentTimer(0); 
+
+      cameraRef.current.startRecording({
+        onRecordingFinished: (video) => {
+          setIsRecording(false);
+          clearInterval(timerInterval.current);
+          
+          if (video && video.path) {
+            const recordingDuration = video.duration;
+
+            if (recordingDuration >= 30) {
+              setVideoPath(video.path);
+              setShowPreview(true);
+            } else {
+              Alert.alert(
+                "Recording Too Short",
+                `Please record for at least 30 seconds. Your video was only ${Math.round(recordingDuration)} seconds.`,
+                [{ text: "OK" }]
+              );
+              setVideoPath(null);
+              setCurrentTimer(0);
+            }
+          } else {
+             console.error('Recording failed: No video object received.');
+             Alert.alert('Error', 'Failed to save the recording. Please try again.');
+          }
+        },
+        onRecordingError: (error) => {
+          console.error('Recording error:', error);
+          setIsRecording(false);
+          clearInterval(timerInterval.current);
+        },
+      });
+
+      timerInterval.current = setInterval(() => {
+        setCurrentTimer(prev => {
+          if (prev >= 59) {
+            clearInterval(timerInterval.current);
+            stopRecording();
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    }
+  }, [isRecording, stopRecording]);
+
+  const handleUploadVideo = useCallback(async () => {
+    if (!videoPath) {
+      Alert.alert('Error', 'No video to upload.');
+      return;
+    }
+    setShowPreview(false);
+    setUploading(true);
+    setUploadProgress(0);
+
+    const randomFileName = `${Date.now()}.mp4`;
+    const formattedUri = videoPath;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', { uri: formattedUri, type: 'video/mp4', name: randomFileName });
+      formData.append('userId', String(userId));
+      formData.append('jobId', String(jobId));
+      formData.append('roleCode', String(roleCode));
+      formData.append('college', String(college));
+
+      const response = await apiClient.post(`/api/videos/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const percent = (progressEvent.loaded / progressEvent.total) * 100;
+          setUploadProgress(percent);
+        },
+      });
+
+      setUploadProgress(100);
+
+      if (response.data?.filePath && response.data?.id) {
+        setTimeout(() => {
+          Alert.alert('Success', 'Video uploaded successfully!');
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Transcribe', params: { userId, videos: [response.data] } }],
+          });
+        }, 2000); 
+      } else {
+        throw new Error('Unexpected server response.');
+      }
+    } catch (error) {
+      console.error('Upload Error:', error.response?.data || error.message);
+      Alert.alert('Error', 'Error uploading video. Please try again.');
+      setUploading(false);
+      setVideoPath(null);
+      setCurrentTimer(0);
+    }
+  }, [videoPath, userId, jobId, roleCode, college, navigation]);
+
+  const handleRedo = () => {
+    setShowPreview(false);
+    setVideoPath(null);
+    setCurrentTimer(0);
+  };
+  
+  if (!device) {
+    return <ActivityIndicator style={styles.container} color="#fff" size="large" />;
+  }
+  
+  if (!hasCameraPermission || !hasMicrophonePermission) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <View style={styles.permission.container}>
+          <Icon name="lock-alert" size={80} color="#FFA500" />
+          <Text style={styles.permission.title}>Camera & Microphone Access</Text>
+          <Text style={styles.permission.message}>
+            To record videos with sound, this app needs access to both your camera and your microphone.
+          </Text>
+          <TouchableOpacity style={styles.permission.button} onPress={handleRequestPermission}>
+            <Text style={styles.permission.buttonText}>Grant Permissions</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+  
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <Camera
+        ref={cameraRef}
+        device={device}
+        isActive={true}
+        style={StyleSheet.absoluteFill}
+        video={true}
+        audio={true}
+        torch={onFlash}
+      />
+      
+      <View style={styles.topControls}>
+        <TouchableOpacity style={styles.iconButton} onPress={() => setOnFlash(f => f === 'off' ? 'on' : 'off')}>
+          <Icon name={onFlash === 'off' ? 'flash' : 'flash-off'} color="white" size={28} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton} onPress={() => navigation.goBack()}>
+          <Icon name="close" color="white" size={28} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.bottomControls}>
+        <TouchableOpacity style={styles.iconButton} onPress={() => setIsFrontCamera(p => !p)}>
+            <Icon name="camera-flip-outline" size={32} color="white" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.recordButton}
+          onPress={isRecording ? stopRecording : startRecording}
+        >
+          <View style={[styles.recordButtonInner, isRecording && styles.recordButtonRecording]} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.iconButton} onPress={() => videoPath ? setShowPreview(true) : null} disabled={!videoPath}>
+            <Icon name="play-box-outline" size={32} color={videoPath ? "white" : "#666"} />
+        </TouchableOpacity>
+      </View>
+
+      {isRecording && (
+        <View style={styles.timerContainer}>
+          <Text style={styles.timerText}>{`00:${currentTimer.toString().padStart(2, '0')}`}</Text>
+        </View>
+      )}
+
+      <Modal animationType="fade" visible={showPreview} transparent={true}>
+        <BlurView style={styles.modal.blurView} blurType="dark" blurAmount={10} />
+        <View style={styles.modal.container}>
+            <Text style={styles.modal.header}>Preview Video</Text>
+            <View style={styles.modal.videoContainer}>
+              <Video source={{ uri: videoPath }} style={styles.modal.videoPlayer} controls resizeMode="contain" repeat/>
+            </View>
+            <View style={styles.modal.buttonContainer}>
+              <TouchableOpacity style={styles.modal.button} onPress={handleRedo}>
+                <BlurView style={styles.modal.buttonBlur} blurType="light" blurAmount={15}>
+                    <Icon name="trash-can-outline" size={28} color="#FF5A5F" />
+                    <Text style={[styles.modal.buttonText, {color: '#FF5A5F'}]}>Redo</Text>
+                </BlurView>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modal.button} onPress={handleUploadVideo}>
+                <BlurView style={styles.modal.buttonBlur} blurType="light" blurAmount={15}>
+                    <Icon name="cloud-upload-outline" size={28} color="#00A699" />
+                    <Text style={[styles.modal.buttonText, {color: '#00A699'}]}>Upload</Text>
+                </BlurView>
+              </TouchableOpacity>
+            </View>
+        </View>
+      </Modal>
+
+      {isUploading && (
+        <View style={styles.upload.overlay}>
+            <BlurView style={StyleSheet.absoluteFill} blurType="dark" blurAmount={15}/>
+            {uploadProgress < 100 ? (
+                <UploadProgressCircle progress={uploadProgress} />
+            ) : (
+                <ActivityIndicator size="large" color="#fff" />
+            )}
+            <Text style={styles.upload.text}>
+              {uploadProgress < 100 ? 'Uploading video...' : 'Processing video...'}
+            </Text>
+        </View>
+      )}
+
+      <Modal transparent={true} animationType="fade" visible={showJobIdPrompt}>
+        <View style={styles.jobId.container}>
+          <View style={styles.jobId.content}>
+            <Text style={styles.jobId.title}>Choose an ID</Text>
+            <Text style={styles.jobId.text}>If you want to apply for a specific position, enter the Job ID below.</Text>
+            <TextInput placeholder="Enter Job ID (optional)" value={jobId} onChangeText={setJobId} style={styles.jobId.input} />
+            <View style={styles.jobId.buttonContainer}>
+              <TouchableOpacity onPress={() => { setShowJobIdPrompt(false); setJobId(''); }} style={[styles.jobId.button, styles.jobId.buttonSkip]}>
+                <Text style={styles.jobId.buttonText}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowJobIdPrompt(false)} style={[styles.jobId.button, styles.jobId.buttonSubmit]}>
+                <Text style={styles.jobId.buttonText}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
-  flashButton: {
-    position: 'absolute',
-    left: 20,
-    top: 40,
-    borderWidth: 2,
-    borderColor: 'white',
-    borderRadius: 10,
-    padding: 5,
-  },
-  exitButton: {
-    position: 'absolute',
-    right: 20,
-    top: 40,
-    borderWidth: 2,
-    borderColor: 'white',
-    borderRadius: 10,
-    height: 40,
-    width: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  exitText: {color: 'white', fontSize: 20, fontWeight: 'bold'},
-  timer: {position: 'absolute', bottom: '90%'},
-  timerText: {color: 'white', fontSize: 24, fontWeight: '700'},
-  recordButton: {
-    position: 'absolute',
-    bottom: 50,
-    height: 60,
-    width: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 30,
-  },
-  recording: {backgroundColor: 'red', borderWidth: 2, borderColor: 'white'},
-  notRecording: {
-    backgroundColor: 'white',
-    borderWidth: 2,
-    borderColor: 'black',
-  },
-  innerCircle: {
-    height: '90%',
-    width: '90%',
-    borderWidth: 1,
-    borderColor: 'black',
-    borderRadius: 50,
-  },
-  modalContainer: {
+  container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#000',
   },
-  modalHeader: {color: 'white', fontSize: 20, marginBottom: 20},
-  videoPlayer: {width: '100%', height: '70%'},
-  closeModalButton: {
-    backgroundColor: 'red',
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 20,
-  },
-  closeModalText: {color: 'white', fontSize: 16},
-  showModalButton: {
+  topControls: {
     position: 'absolute',
-    bottom: 130,
-    padding: 10,
-    borderRadius: 5,
-    left: '44%',
-  },
-  showModalText: {color: 'white', fontSize: 16},
-  controlButtons: {
-    position: 'absolute',
-    bottom: 120,
-    right: 145,
-    // flexDirection: 'row',
-    width: '100%',
-    // backgroundColor:'pink',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  controlButton: {
-    // backgroundColor: 'red',
-    padding: 10,
-    borderRadius: 5,
-    marginLeft: '70%',
-  },
-  controlButtonText: {
-    color: 'white',
-    fontSize: 16,
-  },
-  uploadingOverlay: {
-    position: 'absolute',
-    top: 0,
+    top: 60, // iOS safe area
     left: 0,
     right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    zIndex: 10,
+  },
+  bottomControls: {
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  iconButton: {
+    padding: 10,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 50,
+  },
+  timerContainer: {
+    position: 'absolute',
+    top: 65, // iOS safe area
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 15,
+    paddingVertical: 5,
+    borderRadius: 15,
+    zIndex: 10,
+  },
+  timerText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  recordButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  uploadingText: {
-    color: 'white',
-    marginTop: 10,
-    fontSize: 16,
-    fontWeight: 'bold',
+  recordButtonInner: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'white',
+    borderWidth: 3,
+    borderColor: '#e0e0e0',
   },
-  switchCameraButton: {
-    position: 'absolute',
-    bottom:'8%',
-    left: '25%',
-    transform: [{translateX: -50}],
-    padding: 10,
+  recordButtonRecording: {
+    width: 40,
+    height: 40,
     borderRadius: 10,
+    backgroundColor: '#FF5A5F',
   },
-  infoButton: {
-    position: 'absolute',
-    bottom: '6%',
-    left: '90%',
-    transform: [{translateX: -50}],
-    padding: 10,
+  modal: {
+    blurView: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    container: {
+      flex: 1,
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingTop: 80,
+      paddingBottom: 60,
+      paddingHorizontal: 20,
+    },
+    header: {
+      color: 'white',
+      fontSize: 24,
+      fontWeight: 'bold',
+    },
+    videoContainer: {
+      width: '100%',
+      height: '85%',
+      borderRadius: 20,
+      overflow: 'hidden',
+      borderWidth: 2,
+      borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    videoPlayer: {
+      width: '100%',
+      height: '100%',
+    },
+    buttonContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      width: '100%',
+    },
+    button: {
+      alignItems: 'center',
+    },
+    buttonBlur: {
+        width: 120,
+        height: 60,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 15,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    buttonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      marginTop: 5,
+    },
   },
-  switchCameraText: {
-    color: 'white',
-    fontSize: 18,
+  upload: {
+    overlay: {
+      ...StyleSheet.absoluteFillObject,
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 99,
+    },
+    progressContainer: {
+      width: 120,
+      height: 120,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    progressText: {
+      position: 'absolute',
+      color: 'white',
+      fontSize: 24,
+      fontWeight: 'bold',
+    },
+    text: {
+      color: 'white',
+      fontSize: 18,
+      marginTop: 20,
+      fontWeight: '500',
+    },
   },
-  camicon: {
-    color: '#ffffff',
-    position: 'absolute',
+  jobId: {
+    container: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+    },
+    content: {
+        width: '85%',
+        backgroundColor: 'white',
+        padding: 25,
+        borderRadius: 15,
+    },
+    title: {
+        fontSize: 20, 
+        fontWeight: 'bold', 
+        marginBottom: 10, 
+        textAlign: 'center'
+    },
+    text: {
+        fontSize: 16,
+        textAlign: 'center',
+        marginBottom: 20,
+        color: '#666'
+    },
+    input: { 
+        fontSize: 16,
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 20,
+        textAlign: 'center',
+    },
+    buttonContainer: {
+        flexDirection: 'row', 
+        justifyContent: 'space-between'
+    },
+    button: {
+        paddingVertical: 12,
+        borderRadius: 8,
+        width: '48%',
+        alignItems: 'center',
+    },
+    buttonSkip: {
+        backgroundColor: '#A9A9A9',
+    },
+    buttonSubmit: {
+        backgroundColor: '#007AFF',
+    },
+    buttonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16
+    },
   },
-  infoicon: {
-    color: '#ffffff',
-    // left: 176,
-    // bottom: 38,
+  permission: {
+    container: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: '#1c1c1c',
+      padding: 20,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: 'bold',
+      color: 'white',
+      marginTop: 20,
+      textAlign: 'center',
+    },
+    message: {
+      fontSize: 16,
+      color: '#ccc',
+      textAlign: 'center',
+      marginTop: 10,
+      lineHeight: 22,
+    },
+    button: {
+      backgroundColor: '#007AFF',
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      borderRadius: 25,
+      marginTop: 30,
+    },
+    buttonText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: '600',
+    },
   },
 });
 

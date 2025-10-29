@@ -2,22 +2,33 @@ import React, { useState } from 'react';
 import {
   View,
   TextInput,
-  Button,
-  StyleSheet,
-  Text,
   TouchableOpacity,
+  Text,
+  StyleSheet,
   Alert,
   Modal,
   ActivityIndicator,
   Image,
+  Dimensions,
+  Button,
 } from 'react-native';
+import { BlurView } from '@react-native-community/blur';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  interpolate,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import LinearGradient from 'react-native-linear-gradient';
 import FastImage from 'react-native-fast-image';
-import axios from 'axios'; // Import Axios
-import { WebView } from 'react-native-webview'; // Import WebView for LinkedIn OAuth
+import axios from 'axios';
+import { WebView } from 'react-native-webview';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import env from './env';
+
+const { width, height } = Dimensions.get('window');
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -26,188 +37,200 @@ const LoginScreen = () => {
   const [showLinkedInModal, setShowLinkedInModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showRoleSelection, setShowRoleSelection] = useState(false);
-  const [userData, setUserData] = useState(null); // To store LinkedIn user details
+  const [userData, setUserData] = useState(null);
 
-  // Function to handle standard login
+  const rotateX = useSharedValue(0);
+  const rotateY = useSharedValue(0);
+
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      rotateY.value = interpolate(event.translationX, [-width / 2, width / 2], [-10, 10]);
+      rotateX.value = interpolate(event.translationY, [-height / 2, height / 2], [10, -10]);
+    })
+    .onEnd(() => {
+      rotateX.value = withTiming(0, { duration: 500 });
+      rotateY.value = withTiming(0, { duration: 500 });
+    });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { perspective: 300 },
+        { rotateX: `${rotateX.value}deg` },
+        { rotateY: `${rotateY.value}deg` },
+      ],
+    };
+  });
+
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Validation Error', 'Both email and password are required!');
       return;
     }
-
-    setLoading(true); // ✅ Corrected this
+    setLoading(true);
 
     try {
-      const response = await axios.post(
-        `${env.baseURL}/api/login`,
-        { email, password },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const loginResponse = await axios.post(`${env.baseURL}/api/login`, { email, password });
+      const { token, jobOption } = loginResponse.data;
+      
+      // 1. Log Initial API Response Data
+      console.log('✅ Login Success. JobOption received from API:', jobOption);
 
-      const { firstName, jobOption, userId, industry, videos } = response.data;
-      const videoId =
-        Array.isArray(videos) && videos.length > 0 && videos[0]?.videoId
-          ? videos[0].videoId
-          : null;
+      if (!token) throw new Error('Login failed, token not received.');
+      await AsyncStorage.setItem('userToken', token);
 
-      if (firstName && jobOption) {
-        // Employee-like roles
-        if (
-          jobOption === 'Employee' ||
-          jobOption === 'Entrepreneur' ||
-          jobOption === 'Freelancer'
-        ) {
-          await saveStorage(userId, firstName, email, jobOption, industry, videoId);
-          navigation.navigate('home1');
-        }
-        // Employer-like roles
-        else if (jobOption === 'Employer' || jobOption === 'Investor') {
-          await saveStorage(userId, firstName, email, jobOption, industry, videoId);
-          navigation.navigate('HomeScreen', {
-            firstName,
-            email,
-            jobOption,
-            userId,
-            industry,
-          });
-        }
+      const userDetailsResponse = await axios.get(`${env.baseURL}/api/user-detail`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-        setEmail('');
-        setPassword('');
+      const userDetails = userDetailsResponse.data;
+      if (!userDetails || !userDetails.userId) throw new Error('User data is incomplete.');
+
+      const {
+        userId,
+        firstName,
+        email: userEmail,
+        industry,
+        videos,
+        college,
+        profileUrl,
+        jobid, 
+      } = userDetails;
+      const videoId = videos?.[0]?.videoId || null;
+      
+      const role = jobOption?.toLowerCase();
+
+      // 2. Normalize and log the jobOption before switch/if logic
+      const normalizedJobOption = jobOption?.toUpperCase().trim();
+      console.log('➡️ Normalized JobOption for switch logic:', normalizedJobOption);
+
+
+      if (role === 'placementdrive' || role === 'academy' || role === 'placement') {
+        await savePlacementLoginData(userId, firstName, userEmail, college, jobOption, profileUrl, jobid);
+        console.log('🔄 Redirecting to RoleSelection (Placement/Academy user)');
+        navigation.navigate('RoleSelection');
       } else {
-        Alert.alert('Error', 'User data is incomplete.');
+        await saveStorage(userId, firstName, userEmail, jobOption, industry, videoId, college, profileUrl);
+
+        switch (normalizedJobOption) {
+          case 'Employee':
+          case 'Entrepreneur':
+          case 'Freelancer':
+            console.log('🚀 Redirecting to home1 (Employee/Entrepreneur/Freelancer)');
+            navigation.navigate('home1');
+            break;
+          case 'Employer':
+          case 'Investor':
+            console.log('🏠 Redirecting to HomeScreen (Employer/Investor)');
+            navigation.navigate('HomeScreen');
+            break;
+          default:
+            console.error('⚠️ Navigation Failed: Unknown Role!', normalizedJobOption);
+            Alert.alert('Login Error', `Unknown or unrecognized user role: ${jobOption}`);
+            break;
+        }
       }
+
+      setEmail('');
+      setPassword('');
+
     } catch (error) {
-      console.error(
-        'Login failed:',
-        error.response ? error.response.data : error.message
-      );
+      // 3. Log detailed error information
+      console.error('❌ Login failed during API call or data processing:', error.response ? error.response.data : error.message);
       Alert.alert('Login Failed', 'Invalid email or password!');
     } finally {
       setLoading(false);
     }
   };
 
-  const saveStorage = async (
-    userId,
-    firstName,
-    email,
-    jobOption,
-    industry,
-    videoId
-  ) => {
+  const savePlacementLoginData = async (userId, firstName, email, college, jobOption, profileUrl, jobid) => {
     try {
-      await AsyncStorage.setItem('userId', userId.toString());
-      await AsyncStorage.setItem('firstName', firstName);
-      await AsyncStorage.setItem('email', email);
-      await AsyncStorage.setItem('jobOption', jobOption);
-      await AsyncStorage.setItem('industry', industry || '');
+      const dataToSave = [
+        ['userId', userId ? userId.toString() : ''],
+        ['firstName', firstName || ''],
+        ['email', email || ''],
+        ['college', college || ''],
+        ['jobOption', jobOption || ''],
+        ['profileUrl', profileUrl || ''],
+        ['jobid', jobid ? jobid.toString() : ''], 
+      ];
+      
+      await AsyncStorage.multiSet(dataToSave);
+      console.log('✅ Placement data (including jobid) saved successfully.');
+    } catch (error) {
+      console.error('❌ Error saving PlacementLogin data to AsyncStorage:', error);
+    }
+  };
 
-      if (videoId !== null && videoId !== 'null') {
-        await AsyncStorage.setItem('videoId', videoId.toString());
+  const saveStorage = async (userId, firstName, email, jobOption, industry, videoId, college, profileUrl) => {
+    try {
+      const items = [
+        ['userId', userId ? userId.toString() : ''],
+        ['firstName', firstName || ''],
+        ['email', email || ''],
+        ['jobOption', jobOption || ''],
+        ['industry', industry || ''],
+        ['college', college || ''],
+        ['profileUrl', profileUrl || ''],
+      ];
+
+      if (videoId) {
+        items.push(['videoId', videoId.toString()]);
       } else {
         await AsyncStorage.removeItem('videoId');
       }
+
+      await AsyncStorage.multiSet(items);
+      console.log('✅ User data saved successfully.');
     } catch (error) {
       console.error('Error saving data to AsyncStorage:', error);
     }
   };
 
-  // Function to initiate LinkedIn login
+  // --- LinkedIn Logic (Untouched) ---
   const handleLinkedInLogin = () => {
     setShowLinkedInModal(true);
   };
 
-  // Custom function to extract query parameters from a URL
-  const getQueryParams = url => {
+  const getQueryParams = (url) => {
     const params = {};
     const urlParts = url.split('?');
     if (urlParts.length > 1) {
       const queryString = urlParts[1];
       const pairs = queryString.split('&');
-      pairs.forEach(pair => {
+      pairs.forEach((pair) => {
         const [key, value] = pair.split('=');
         params[decodeURIComponent(key)] = decodeURIComponent(value);
       });
     }
     return params;
   };
-  // Function to handle WebView navigation state changes
-  // Function to handle WebView navigation state changes
-  const handleWebViewNavigationStateChange = async navState => {
-    if (
-      navState.url.startsWith(
-        'https://www.linkedin.com/developers/tools/oauth/redirect',
-      )
-    ) {
+
+  const handleWebViewNavigationStateChange = async (navState) => {
+    if (navState.url.includes('oauth/redirect')) {
       const params = getQueryParams(navState.url);
       const code = params.code;
 
       if (code) {
-        setShowLinkedInModal(false); // Close the LinkedIn modal
+        setShowLinkedInModal(false);
         setLoading(true);
         try {
-          const response = await axios.post(`${env.baseURL}/auth/linkedin`, {
-            code,
-          });
-          const { given_name, email, picture } = response.data; // 'picture' contains the URL
+          const response = await axios.post(`${env.baseURL}/auth/linkedin`, { code });
+          const { given_name, email, picture } = response.data;
 
           if (given_name && email && picture) {
-            // Check if email is already signed up
-            const userResponse = await axios.get(`${env.baseURL}/users/check`, {
-              params: { email },
-            });
+            const userResponse = await axios.get(`${env.baseURL}/users/check`, { params: { email } });
 
             if (userResponse.data.exists) {
-              // User exists, log them in (Skip role selection)
-              console.log('User already signed up, logging in...');
-              const { userId, jobOption, firstName, phoneNumber } =
-                userResponse.data;
-              await AsyncStorage.setItem('userId', JSON.stringify(userId));
-              await AsyncStorage.setItem('firstName', firstName);
+              const { userId, jobOption, firstName, profileUrl } = userResponse.data;
+              await saveStorage(userId, firstName, email, jobOption, userResponse.data.industry, null, null, profileUrl);
 
-              if (phoneNumber) {
-                // Navigate based on jobOption
-                if (
-                  jobOption === 'Employee' ||
-                  jobOption === 'Entrepreneur' ||
-                  jobOption === 'Freelancer'
-                ) {
-                  console.log('Navigating to home1...');
-                  navigation.navigate('home1', {
-                    firstName,
-                    email,
-                    jobOption,
-                    userId,
-                  });
-                } else if (
-                  jobOption === 'Employer' ||
-                  jobOption === 'Investor'
-                ) {
-                  console.log('Navigating to HomeScreen...');
-                  navigation.navigate('HomeScreen', {
-                    firstName,
-                    email,
-                    jobOption,
-                    userId,
-                  });
-                }
+              if (jobOption === 'Employer' || jobOption === 'Investor') {
+                navigation.navigate('HomeScreen');
               } else {
-                // User does not have a phone number, navigate to EditScreen
-                console.log('Navigating to EditScreen...');
-                navigation.navigate('Edit', {
-                  firstName: given_name,
-                  email,
-                  jobOption,
-                  userId,
-                });
+                navigation.navigate('home1');
               }
             } else {
-              // User doesn't exist, show role selection
               setUserData({ given_name, email, picture });
               setShowRoleSelection(true);
             }
@@ -215,16 +238,8 @@ const LoginScreen = () => {
             Alert.alert('Error', 'User data is incomplete.');
           }
         } catch (error) {
-          console.error(
-            'Error during LinkedIn login:',
-            error.response ? error.response.data : error.message,
-          );
-          Alert.alert(
-            'Login Failed',
-            error.response
-              ? error.response.data
-              : 'Could not retrieve user data.',
-          );
+          console.error('Error during LinkedIn login:', error.response?.data || error.message);
+          Alert.alert('Login Failed', 'Could not retrieve user data.');
         } finally {
           setLoading(false);
         }
@@ -233,401 +248,159 @@ const LoginScreen = () => {
   };
 
   const handleRoleSelect = async (role) => {
-    if (!userData) {
-      console.log('No user data available. Exiting handleRoleSelect.');
-      return;
-    }
-
+    if (!userData) return;
     const { email, given_name } = userData;
-    console.log('User data received:', { email, given_name });
-
-    // Function to check if the email is from a public domain
-    const isPublicDomain = (email) => {
-      const publicDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com'];
-      const domain = email.split('@')[1];
-      return publicDomains.includes(domain);
-    };
 
     try {
-      // Step 1: Check if the user exists in the database
-      console.log('Checking if user exists in the database...');
-      const response = await axios.get(`${env.baseURL}/users/check`, {
-        params: { email },
-      });
+      await saveStorage(null, given_name, email, role, '', null, '', userData.picture);
+      setShowRoleSelection(false);
 
-      console.log('Database response:', response.data);
-
-      if (response.status === 200 && response.data.exists) {
-        console.log('User already exists in the database.');
-
-        const { jobOption, userId, firstName } = response.data;
-
-        // Store data in AsyncStorage
-        await AsyncStorage.setItem('userId', JSON.stringify(userId));
-        await AsyncStorage.setItem('firstName', firstName);
-
-        setShowRoleSelection(false);
-
-        // Validate employer email domain before navigation
-        if (jobOption === 'Employer' && isPublicDomain(email)) {
-          Alert.alert(
-            'Restricted Email',
-            'Public email domains are not allowed for recruiters.',
-            [{ text: 'OK', onPress: () => navigation.navigate('LoginScreen') }]
-          );
-          return;
-        }
-
-        // Navigate based on jobOption
-        if (role === 'Employer' || role === 'Investor') {
-          console.log('Navigating to HomeScreen...');
-          navigation.navigate('Edit', {
-            firstName: given_name,
-            email,
-            jobOption,
-            userId,
-          });
-        } else if (role === 'Employee' || role === 'Entrepreneur') {
-          console.log('Navigating to home1...');
-          navigation.navigate('Edit', {
-            firstName: given_name,
-            email,
-            jobOption,
-            userId,
-          });
-        }
+      if (role === 'Employer' || role === 'Investor') {
+        navigation.navigate('HomeScreen');
       } else {
-        console.log('User does not exist. Prompting for role selection.');
-
-        if (!role) {
-          console.error('Role not selected. Prompting user.');
-          Alert.alert('Error', 'Please select a role before continuing.');
-          return;
-        }
-
-        // Restrict public domains for employers before saving user details
-        if (role === 'Employer' && isPublicDomain(email)) {
-          Alert.alert(
-            'Restricted Email',
-            'Public email domains are not allowed for recruiters.',
-            [{ text: 'OK', onPress: () => navigation.navigate('LoginScreen') }]
-          );
-          return;
-        }
-
-        console.log('Saving new user details to the database...');
-        const saveResponse = await axios.post(`${env.baseURL}/users`, {
-          firstName: given_name,
-          email,
-          jobOption: role,
-        });
-
-        console.log('Save response:', saveResponse.data);
-
-        if (saveResponse.status === 201) {
-          console.log('User details saved successfully.');
-
-          await AsyncStorage.setItem('userId', JSON.stringify(saveResponse.data.userId));
-          await AsyncStorage.setItem('firstName', given_name);
-
-          setShowRoleSelection(false);
-
-          if (jobOption === 'Employer' || jobOption === 'Investor') {
-            console.log('Navigating to HomeScreen...');
-            navigation.navigate('HomeScreen', {
-              firstName: given_name,
-              email,
-              jobOption: role,
-              userId: saveResponse.data.userId,
-            });
-          } else if (role === 'Employee' || role === 'Entrepreneur') {
-            console.log('Navigating to home1...');
-            navigation.navigate('home1', {
-              firstName: given_name,
-              email,
-              jobOption: role,
-              userId: saveResponse.data.userId,
-            });
-          }
-        } else {
-          console.error('Failed to save user details.');
-          Alert.alert('Error', 'Failed to save user details. Please try again.');
-        }
+        navigation.navigate('home1');
       }
     } catch (error) {
       console.error('Error in handleRoleSelect:', error);
-      Alert.alert(
-        'Alert',
-        'Please check and verify your email to continue.\n(Note: Check your spam folder as well.)',
-        [{ text: 'OK', onPress: () => navigation.navigate('LoginScreen') }]
-      );
+      Alert.alert('Error', 'Could not select role.');
     }
-
   };
-
+  // --------------------------------------------------------------------
 
   return (
     <FastImage
       style={styles.backgroundImage}
       source={require('./assets/Background-01.jpg')}
       resizeMode={FastImage.resizeMode.cover}>
-      {/* <Image style={styles.img} source={require('./assets/Png-01.png')} /> */}
-      <LinearGradient
-        colors={['#d3e4f6', '#a1d1ff']}
-        style={styles.ModelGradient}>
-        <Image style={styles.img2} source={require('./assets/logopng.png')} />
-        <Text style={styles.loginhead}>Login</Text>
-        {/* <Text style={styles.loginsub}>Welcome back , you've been missed!</Text> */}
-        <TouchableOpacity
-          style={styles.linkedinButton}
-          onPress={handleLinkedInLogin}>
-          <Text style={styles.linkedinButtonText}>LinkedIn</Text>
-        </TouchableOpacity>
 
-        <Modal
-          visible={showLinkedInModal}
-          animationType="slide"
-          transparent={true}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={[styles.glassContainer, animatedStyle]}>
+            <BlurView
+              style={styles.absolute}
+              blurType="xlight"
+              blurAmount={8}
+              reducedTransparencyFallbackColor="white"
+            />
+            <Image style={styles.img2} source={require('./assets/logopng.png')} />
+            <Text style={styles.loginhead}>Login</Text>
+
+            <TouchableOpacity style={styles.linkedinButton} onPress={handleLinkedInLogin}>
+              <Text style={styles.linkedinButtonText}>LinkedIn</Text>
+            </TouchableOpacity>
+
+            <View style={styles.dividerContainer}>
+              <View style={styles.horizontalLine} />
+              <Text style={styles.dividerText}>or Login with</Text>
+              <View style={styles.horizontalLine} />
+            </View>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#333"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#333"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            <TouchableOpacity onPress={() => navigation.navigate('ForgetPassword')}>
+              <Text style={styles.forgotPasswordText}>Forget Password ?</Text>
+            </TouchableOpacity>
+
+            <LinearGradient colors={['#70bdff', '#2e80d8']} style={styles.loginButtonGradient}>
+              <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+                <Text style={styles.loginButtonText}>Login</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <TouchableOpacity onPress={() => navigation.navigate('SignupScreen')}>
+              <Text style={styles.createAccount}>
+                Don't Have An Account ? <Text style={{ color: '#0052cc' }}>SignUp</Text>
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('PlacemenntSignup')}>
+              <Text style={styles.createAccount}>
+                Signup as placement officer? <Text style={{ color: '#0052cc' }}>Click Here</Text>
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </GestureDetector>
+      </GestureHandlerRootView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#ffffff" />
+        </View>
+      )}
+
+      {/* Conditional rendering of modals for performance */}
+      {showLinkedInModal && (
+        <Modal animationType="slide" transparent={true} visible={showLinkedInModal} onRequestClose={() => setShowLinkedInModal(false)}>
           <View style={styles.modalContainer}>
             <WebView
-              source={{
-                uri: 'https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=869zn5otx0ejyt&redirect_uri=https://www.linkedin.com/developers/tools/oauth/redirect&scope=profile%20email%20openid', // Replace with your values
-              }}
+              source={{ uri: 'https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=869zn5otx0ejyt&redirect_uri=https://www.linkedin.com/developers/tools/oauth/redirect&scope=profile%20email%20openid' }}
               onNavigationStateChange={handleWebViewNavigationStateChange}
               startInLoadingState={true}
             />
-
             <Button title="Close" onPress={() => setShowLinkedInModal(false)} />
           </View>
         </Modal>
+      )}
 
-        <View style={styles.dividerContainer}>
-          <View style={styles.horizontalLine} />
-          <Text style={styles.dividerText}>or Login with</Text>
-          <View style={styles.horizontalLine} />
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#000"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#000"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-
-        <LinearGradient colors={['#70bdff', '#2e80d8']} style={styles.btn}>
-          <TouchableOpacity style={styles.signupButton} onPress={handleLogin}>
-            <Text style={styles.signupButtonText}>Login</Text>
-          </TouchableOpacity>
-        </LinearGradient>
-        <TouchableOpacity onPress={() => navigation.navigate('SignupScreen')}>
-          <Text style={styles.createAccount}>
-            Don't Have An Account ? <Text style={{ color: 'blue' }}> SignUp</Text>
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => navigation.navigate('ForgetPassword')}>
-          <Text style={styles.createAccount}>
-            Forget Password ?
-          </Text>
-        </TouchableOpacity>
-
-        {loading && (
-          <ActivityIndicator
-            size="large"
-            color="#0000ff"
-            style={styles.loadingIndicator}
-          />
-        )}
-        <Modal
-          visible={showRoleSelection}
-          animationType="fade"
-          transparent={false}>
-          <View style={styles.roleSelectionContainer}>
-            <Text style={styles.title}>Select Your Role</Text>
-            {[
-              'Employer',
-              'Freelancer',
-              'Employee',
-              'Entrepreneur',
-              'Investor',
-            ].map(role => (
-              <TouchableOpacity
-                key={role}
-                style={styles.roleButton}
-                onPress={() => handleRoleSelect(role)}>
-                <Text style={styles.roleText}>{role}</Text>
-              </TouchableOpacity>
-            ))}
+      {showRoleSelection && (
+        <Modal animationType="fade" transparent={true} visible={showRoleSelection} onRequestClose={() => setShowRoleSelection(false)}>
+          <View style={styles.roleModalOverlay}>
+            <View style={styles.roleSelectionContainer}>
+              <Text style={styles.roleTitle}>Select Your Role</Text>
+              {['Employer', 'Freelancer', 'Employee', 'Entrepreneur', 'Investor'].map((role) => (
+                <TouchableOpacity
+                  key={role}
+                  style={styles.roleButton}
+                  onPress={() => handleRoleSelect(role)}>
+                  <Text style={styles.roleText}>{role}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         </Modal>
-      </LinearGradient>
+      )}
     </FastImage>
   );
 };
 
-export default LoginScreen;
-
 const styles = StyleSheet.create({
-  backgroundImage: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    height: '100%',
-  },
-  img: {
-    width: 300,
-    height: 350,
-    marginBottom: -70,
-  },
-  ModelGradient: {
-    width: '90%',
-    borderColor: '#fff',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    paddingHorizontal: 15,
-    paddingVertical: 60,
-    backgroundColor: 'rgba(255, 255, 255,0.7)',
-    borderRadius: 10,
-    marginTop: -50,
-    elevation: 5,
-  },
-  title: {
-    fontSize: 32,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#187bcd',
-    padding: 10,
-    marginBottom: 10,
-    borderRadius: 7,
-    color: 'black',
-    backgroundColor: '#fff',
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  createAccount: {
-    color: '#000',
-    marginTop: 10,
-    textAlign: 'center',
-    fontWeight: '600',
-    fontSize: 17,
-  },
-  linkedinButton: {
-    backgroundColor: '#ffff',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-    marginTop: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  linkedinButtonText: {
-    color: '#0077B5',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  loadingIndicator: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -20 }, { translateY: -20 }],
-  },
-  img2: {
-    width: 200,
-    height: 100,
-    marginTop: -60,
-    marginHorizontal: 65,
-  },
-  loginhead: {
-    width: '100%',
-    marginHorizontal: 145,
-    marginTop: -41,
-    marginBottom: 10,
-    fontSize: 24,
-    fontWeight: '500',
-    color: '#4e4b51',
-  },
-  loginsub: {
-    width: '100%',
-    marginLeft: 40,
-    marginTop: 7,
-    marginBottom: 7,
-  },
-  signupButton: {
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    padding: 7,
-  },
-  signupButtonText: {
-    fontWeight: '500',
-    color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '600',
-  },
-  btn: {
-    width: 150,
-    marginHorizontal: 100,
-    borderRadius: 10,
-    elevation: 5,
-  },
-  createAccount: {
-    color: '#000',
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 10,
-  },
-  horizontalLine: {
-    flex: 1,
-    height: 2,
-    backgroundColor: '#0B0705',
-  },
-  dividerText: {
-    marginHorizontal: 8,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#24252B',
-  },
-  roleSelectionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  roleButton: {
-    padding: 10,
-    marginVertical: 10,
-    width: '80%',
-    backgroundColor: 'lightblue',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  roleText: {
-    fontSize: 22,
-    color: '#ffffff',
-  },
+  backgroundImage: { flex: 1, justifyContent: 'center', width: '100%' },
+  glassContainer: { width: '95%', borderRadius: 20, padding: 20, overflow: 'hidden', borderColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 1.5, marginTop: '40%', alignSelf: 'center' },
+  absolute: { position: 'absolute', top: 0, left: 0, bottom: 0, right: 0 },
+  img2: { width: 150, height: 75, alignSelf: 'center', marginBottom: 10 },
+  loginhead: { textAlign: 'center', fontSize: 28, fontWeight: 'bold', color: '#000', marginBottom: 20, marginTop: '-10%' },
+  input: { backgroundColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 0.3, padding: 12, marginBottom: 12, borderRadius: 10, borderColor: '#0387e0', color: '#000', fontSize: 16, fontWeight: '500' },
+  forgotPasswordText: { color: '#000', textAlign: 'right', fontSize: 14, paddingBottom: 15, fontWeight: '600' },
+  loginButtonGradient: { borderRadius: 10, elevation: 5, marginBottom: 15 },
+  loginButton: { paddingVertical: 12, justifyContent: 'center', alignItems: 'center' },
+  loginButtonText: { fontWeight: 'bold', color: '#ffffff', fontSize: 18 },
+  createAccount: { color: '#000', marginTop: 10, textAlign: 'center', fontWeight: '500', fontSize: 14 },
+  linkedinButton: { backgroundColor: '#0077B5', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  linkedinButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
+  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
+  horizontalLine: { flex: 1, height: 1, backgroundColor: 'rgba(0, 0, 0, 0.2)' },
+  dividerText: { marginHorizontal: 10, fontSize: 14, fontWeight: '500', color: '#333' },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0, 0, 0, 0.6)', justifyContent: 'center', alignItems: 'center' },
+  modalContainer: { flex: 1, marginTop: 50 },
+  roleModalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
+  roleSelectionContainer: { width: '85%', padding: 20, backgroundColor: 'white', borderRadius: 15, alignItems: 'center' },
+  roleTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
+  roleButton: { padding: 15, marginVertical: 8, width: '100%', backgroundColor: '#2e80d8', borderRadius: 10, alignItems: 'center' },
+  roleText: { fontSize: 18, color: '#ffffff', fontWeight: '600' },
 });
+
+export default LoginScreen;

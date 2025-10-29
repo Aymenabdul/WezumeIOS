@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, useCallback} from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -11,12 +11,12 @@ import {
   Text,
   ActivityIndicator,
 } from 'react-native';
-import axios from 'axios';
-import {Buffer} from 'buffer';
+import axios, { all } from 'axios';
+import { Buffer } from 'buffer';
 import Video from 'react-native-video';
 import Header from './header';
-import {useNavigation} from '@react-navigation/native';
-import {PermissionsAndroid, Platform} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import env from './env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -36,7 +36,7 @@ const MyVideos = () => {
     itemVisiblePercentThreshold: 50,
   });
 
-  const onViewableItemsChanged = useCallback(({viewableItems}) => {
+  const onViewableItemsChanged = useCallback(({ viewableItems }) => {
     if (viewableItems.length > 0) {
       setVisibleVideoIndex(viewableItems[0].index);
     }
@@ -70,7 +70,7 @@ const MyVideos = () => {
           onPress: () => null,
           style: 'cancel',
         },
-        {text: 'Yes', onPress: () => navigation.goBack()},
+        { text: 'Yes', onPress: () => navigation.goBack() },
       ]);
       return true;
     };
@@ -81,54 +81,63 @@ const MyVideos = () => {
   }, []);
 
   useEffect(() => {
-    if (userId) {
-      // Ensure userId is defined
-      const fetchVideos = async userId => {
-        if (fetching) return; // Prevent multiple fetch calls
-        setFetching(true);
-        console.log('Fetching videos...'); // Add this line to verify when the function is called
-        try {
-          setLoading(true);
-          const response = await fetch(
-            `${env.baseURL}/api/videos/liked?userId=${userId}`,
-          );
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(
-              `Failed to fetch videos: ${response.status} ${response.statusText} - ${errorText}`,
-            );
-          }
-          const videoData = await response.json();
-          processVideoData(videoData);
-        } catch (error) {
-          console.error('Error fetching videos:', error);
-          setHasVideo(false);
-        } finally {
-          setLoading(false);
-          setFetching(false); // Reset fetching state
-        }
-      };
+    const fetchLikedVideos = async () => {
+      if (fetching || !userId) return;
+      setFetching(true);
+      setLoading(true);
 
-      const processVideoData = async videoData => {
-        if (!Array.isArray(videoData) || videoData.length === 0) {
-          console.warn('No videos available');
-          setVideoUrl([]);
-          setHasVideo(false);
+      const likedCacheKey = `cachedLikedVideos_${userId}`;
+
+      try {
+        const cachedVideos = await AsyncStorage.getItem(likedCacheKey);
+        if (cachedVideos) {
+          const parsed = JSON.parse(cachedVideos);
+          setVideoUrl(parsed);
+          setHasVideo(parsed.length > 0);
+          console.log('✅ Loaded liked videos from cache');
           return;
         }
-        const videoURIs = videoData.map(video => ({
-          Id: video.id,
-          uri: video.videoUrl,
-          thumbnail: video.thumbnail, // Use pre-existing thumbnail URL from API
-        }));
-        setVideoUrl(videoURIs);
-        setHasVideo(true);
-        setLoadingThumbnails(false); // Stop showing the loading indicator
-      };
 
-      fetchVideos(userId);
-    }
+        const response = await fetch(`${env.baseURL}/api/videos/liked?userId=${userId}`);
+        if (!response.ok) throw new Error('Failed to fetch liked videos');
+
+        const videoData = await response.json();
+        if (!Array.isArray(videoData) || videoData.length === 0) {
+          setHasVideo(false);
+          setVideoUrl([]);
+          return;
+        }
+
+        const videosWithUri = videoData.map(video => ({
+          id: video.id,
+          userId: video.userId,
+          uri: video.videoUrl || video.uri,
+          firstName: video.firstname || video.firstName || '',
+          profileImage: video.profilePic
+            ? `data:image/jpeg;base64,${video.profilePic}`
+            : video.profileImage || null,
+          phoneNumber: video.phonenumber || video.phoneNumber || '',
+          email: video.email || '',
+          thumbnail: video.thumbnail || null,
+        }));
+
+        setVideoUrl(videosWithUri);
+        setHasVideo(true);
+        await AsyncStorage.setItem(likedCacheKey, JSON.stringify(videosWithUri));
+        console.log('✅ Fetched and cached liked videos');
+      } catch (err) {
+        console.error('❌ Error fetching liked videos:', err);
+        setHasVideo(false);
+      } finally {
+        setLoading(false);
+        setLoadingThumbnails(false);
+        setFetching(false);
+      }
+    };
+
+    fetchLikedVideos();
   }, [userId]);
+
 
 
   const fetchProfilePic = async userId => {
@@ -165,24 +174,25 @@ const MyVideos = () => {
         ) : (
           <FlatList
             data={videourl} // Exclude video with Id 32
-            renderItem={({item, index}) => (
+            renderItem={({ item, index }) => (
               <TouchableOpacity
                 onPress={() => {
-                  console.log('VideoId', item.id, 'Index', index);
+                  console.log('VideoId', item.id, 'Index', index, 'all Videos', videourl);
                   navigation.navigate('LikeSwipe', {
                     videoId: item.id,
                     index: index,
+                    allVideos: videourl,
                   });
                 }}
                 style={[styles.videoItem]}>
                 {item.thumbnail ? (
                   <ImageBackground
-                    source={{uri: item.thumbnail}}
+                    source={{ uri: item.thumbnail }}
                     style={styles.videoPlayer}
                     resizeMode="contain">
                     {visibleVideoIndex === index && (
                       <Video
-                        source={{uri: item.thumbnail}}
+                        source={{ uri: item.thumbnail }}
                         paused={false}
                         style={styles.videoPlayer}
                         resizeMode="contain"

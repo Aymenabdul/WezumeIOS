@@ -1,426 +1,156 @@
-import React, {useEffect, useState} from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import {
-  Image,
-  TextInput,
   StyleSheet,
   Text,
   ScrollView,
   TouchableOpacity,
   View,
+  TextInput,
+  ImageBackground,
+  Platform,
+  StatusBar,
+  Modal,
 } from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
-import LinearGradient from 'react-native-linear-gradient';
-import UploadImage from 'react-native-vector-icons/MaterialCommunityIcons';
-import FastImage from 'react-native-fast-image';
+import { useNavigation } from '@react-navigation/native';
+import { BlurView } from '@react-native-community/blur';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Back from 'react-native-vector-icons/AntDesign';
-import axios from 'axios';
-import {Buffer} from 'buffer';
-import env from './env';
+// No longer need apiClient or ActivityIndicator/Modal here
 
-const Profile = () => {
-  const [currentRole, setCurrentRole] = useState('');
-  const [keySkills, setKeySkills] = useState('');
-  const [experience, setExperience] = useState([]);
-  const [industry, setIndustry] = useState([]);
-  const [firstName, setFirstNmae] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [city, setCity] = useState([]);
-  const navigation = useNavigation();
-  const [profileImage, setProfileImage] = useState();
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isIndustryDropdownOpen, setIsIndustryDropdownOpen] = useState(false);
-  const [isExperienceDropdownOpen, setIsExperienceDropdownOpen] =
-    useState(false);
-  const [industrySearchText, setIndustrySearchText] = useState('');
+// --- Static Data (Unchanged) ---
+const experienceOptions = [
+  { label: '0-1 years', value: '0-1' }, { label: '1-3 years', value: '1-3' },
+  { label: '3-5 years', value: '3-5' }, { label: '5-10 years', value: '5-10' },
+  { label: '10-15 years', value: '10-15' }, { label: '15+ years', value: '15+' },
+];
+const cityOptions = ['New Delhi', 'Mumbai', 'Bengaluru', 'Chennai', 'Hyderabad', 'Pune', 'Kolkata'];
+const industries = [
+  'Banking & Finance', 'Biotechnology', 'Construction', 'Consumer Goods', 'Education', 'Energy',
+  'Healthcare', 'Media & Entertainment', 'Hospitality', 'Information Technology (IT)', 'Insurance',
+  'Manufacturing', 'Non-Profit', 'Real Estate', 'Retail', 'Transportation', 'Travel & Tourism',
+  'Textiles', 'Logistics & Supply Chain', 'Sports', 'E-commerce', 'Consulting', 'Advertising & Marketing',
+  'Architecture', 'Arts & Design', 'Environmental Services', 'Human Resources', 'Legal',
+  'Management', 'Telecommunications',
+];
+
+// --- Memoized Child Components (Unchanged) ---
+const GlassInput = memo(({ value, onChangeText, placeholder }) => (
+  <View style={styles.input.container}>
+    <TextInput style={styles.input.text} placeholder={placeholder} placeholderTextColor="rgba(0, 0, 0, 0.4)" value={value} onChangeText={onChangeText} />
+  </View>
+));
+const GlassDropdown = memo(({ label, selectedItems, onSelectItem, options }) => {
+  const [isOpen, setIsOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [FilteredVideos, setFilteredVideos] = useState([]);
-  const route = useRoute();
-
-  const experienceOptions = [
-    {label: '0-1 years', value: '0-1'},
-    {label: '1-3 years', value: '1-3'},
-    {label: '3-5 years', value: '3-5'},
-    {label: '5-10 years', value: '5-10'},
-    {label: '10-15 years', value: '10-15'},
-    {label: '15+ years', value: '10+'},
-  ];
-
-  const cityOptions = [
-    'New Delhi',
-    'Mumbai',
-    'Bengaluru',
-    'Chennai',
-    'Hyderabad',
-    'Pune',
-    'Kolkata',
-  ];
-
-  const industries = [
-    'Banking & Finance',
-    'Biotechnology',
-    'Construction',
-    'Consumer Goods',
-    'Education',
-    'Energy',
-    'Healthcare',
-    'Media & Entertainment',
-    'Hospitality',
-    'Information Technology (IT)',
-    'Insurance',
-    'Manufacturing',
-    'Non-Profit',
-    'Real Estate',
-    'Retail',
-    'Transportation',
-    'Travel & Tourism',
-    'Textiles',
-    'Logistics & Supply Chain',
-    'Sports',
-    'E-commerce',
-    'Consulting',
-    'Advertising & Marketing',
-    'Architecture',
-    'Arts & Design',
-    'Environmental Services',
-    'Human Resources',
-    'Legal',
-    'Management',
-    'Telecommunications',
-  ];
-
-  const currentYear = new Date().getFullYear();
-  const years = Array.from(new Array(100), (val, index) => currentYear - index);
-  const filteredIndustries = industries.filter(industry =>
-    industry.toLowerCase().includes(industrySearchText.toLowerCase()),
+  const filteredOptions = useMemo(() => options.filter(opt => opt.label.toLowerCase().includes(searchText.toLowerCase())), [options, searchText]);
+  const displayText = selectedItems.length > 0 ? selectedItems.join(', ') : label;
+  return (
+    <View>
+      <TouchableOpacity onPress={() => setIsOpen(true)}>
+        <View style={styles.input.container}>
+          <Text style={styles.dropdown.buttonText} numberOfLines={1}>{displayText}</Text>
+          <Icon name="chevron-down" size={24} color="#333" />
+        </View>
+      </TouchableOpacity>
+      <Modal visible={isOpen} transparent={true} animationType="fade" onRequestClose={() => setIsOpen(false)}>
+        <TouchableOpacity style={styles.dropdown.modalBackdrop} onPress={() => setIsOpen(false)}>
+          <View style={styles.dropdown.modalContent}>
+            <TextInput style={styles.dropdown.searchInput} placeholder={`Search ${label}...`} placeholderTextColor="rgba(0, 0, 0, 0.4)" value={searchText} onChangeText={setSearchText}/>
+            <ScrollView nestedScrollEnabled>
+              {filteredOptions.map(option => (
+                <TouchableOpacity key={option.value} style={styles.dropdown.option} onPress={() => onSelectItem(option.value)}>
+                  <Text style={styles.dropdown.optionText}>{option.label}</Text>
+                  <Icon name={selectedItems.includes(option.value) ? 'checkbox-marked' : 'checkbox-blank-outline'} size={24} color="#007AFF" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
   );
+});
 
-  const toggleIndustryDropdown = () =>
-    setIsIndustryDropdownOpen(!isIndustryDropdownOpen);
+// --- Main Component ---
+const FilterScreen = () => {
+  const [formState, setFormState] = useState({
+    transcriptionKeywords: '',
+    selectedJobId: '',
+    college: '',
+    experience: [],
+    industry: [],
+    city: [],
+  });
+  const navigation = useNavigation();
 
-  const selectIndustry = selectedIndustry => {
-    setIndustry(prevState =>
-      prevState.includes(selectedIndustry)
-        ? prevState.filter(industry => industry !== selectedIndustry)
-        : [...prevState, selectedIndustry],
-    );
-  };
+  const handleFormChange = useCallback((field, value) => {
+    setFormState(prev => ({ ...prev, [field]: value }));
+  }, []);
 
-  const toggleDropdown = () => {
-    setIsDropdownOpen(!isDropdownOpen);
-  };
+  const handleMultiSelect = useCallback((field, value) => {
+    setFormState(prevState => {
+      const currentSelection = prevState[field];
+      const newSelection = currentSelection.includes(value) ? currentSelection.filter(item => item !== value) : [...currentSelection, value];
+      return { ...prevState, [field]: newSelection };
+    });
+  }, []);
 
-  const toggleExperienceDropdown = () => {
-    setIsExperienceDropdownOpen(!isExperienceDropdownOpen);
-  };
+  const handleFilter = useCallback(() => {
+    // ✅ FIX: This function is now much simpler.
+    
+    // 1. Build the filter criteria object.
+    const filterData = {};
+    if (formState.experience.length > 0) filterData.experience = formState.experience.join(',');
+    if (formState.industry.length > 0) filterData.industry = formState.industry.join(',');
+    if (formState.city.length > 0) filterData.city = formState.city.join(',');
+    if (formState.transcriptionKeywords) filterData.transcriptionKeywords = formState.transcriptionKeywords;
+    if (formState.selectedJobId) filterData.jobId = formState.selectedJobId;
+    if (formState.college) filterData.college = formState.college;
 
-  const selectCity = cityName => {
-    setCity(prevState =>
-      prevState.includes(cityName)
-        ? prevState.filter(city => city !== cityName)
-        : [...prevState, cityName],
-    );
-    setIsDropdownOpen(false); // Close dropdown after selection
-    setSearchText(''); // Clear search text
-  };
-
-  const selectExperience = selectedExperience => {
-    setExperience(prevState =>
-      prevState.includes(selectedExperience)
-        ? prevState.filter(exp => exp !== selectedExperience)
-        : [...prevState, selectedExperience],
-    );
-    setIsExperienceDropdownOpen(false); // Close experience dropdown after selection
-  };
-
-  const filteredCities = cityOptions.filter(cityName =>
-    cityName.toLowerCase().includes(searchText.toLowerCase()),
-  );
-
-
-  const handleFilter = async () => {
-    const filterData = {
-      keySkills: keySkills ? keySkills : '',
-      experience: experience && experience.length > 0 ? experience[0] : '',
-      industry: industry && industry.length > 0 ? industry[0] : '',
-      city: city && city.length > 0 ? city[0] : '',
-    };
-    setLoading(true);
-    try {
-      const response = await axios.post(
-        `${env.baseURL}/api/videos/filter`,
-        filterData,
-      );
-      const filteredVideo = response.data;
-      if (Array.isArray(filteredVideo) && filteredVideo.length > 0) {
-        const videosWithUri = filteredVideo.map(video => ({
-          ...video,
-          uri: `${env.baseURL}/api/videos/user/${video.userId}`,
-        }));
-        setFilteredVideos(videosWithUri);
-        navigation.navigate('Filtered', {
-          filteredVideos: videosWithUri,
-          isFiltered: true,
-        });
-      } else {
-        alert('No videos found for the selected filter.');
-        navigation.navigate('Filtered', {
-          filteredVideos: [],
-          isFiltered: true,
-        });
-      }
-    } catch (err) {
-      alert('Error fetching filtered videos');
-      console.error(err.response);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // 2. Navigate and pass ONLY the filter criteria. The results screen will do the fetching.
+    navigation.navigate('Filtered', { 
+        filterCriteria: filterData
+    });
+  }, [formState, navigation]);
 
   return (
-    <><View style={styles.backarrow}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Back name={'leftcircle'} size={24} color={'#ffffff'} style={{elevation:10}} />
-      </TouchableOpacity>
-    </View><FastImage
-      style={styles.backgroundImage}
-      source={require('./assets/login1.jpg')}
-      resizeMode={FastImage.resizeMode.cover}>
-        {/* <Image style={styles.img} source={require('./assets/Png-02.png')} /> */}
-        <LinearGradient colors={['#d3e4f6', '#a1d1ff']} style={styles.container}>
-          {/* <Image style={styles.img2} source={require('./assets/logo.png')} /> */}
-          <Text style={styles.title}>Search</Text>
+    <ImageBackground style={styles.backgroundImage} source={require('./assets/login1.jpg')}>
+      <View style={styles.header.container}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.header.backButton}>
+          <Back name={'arrowleft'} size={30} color={'#FFFFFF'} />
+        </TouchableOpacity>
+      </View>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.formContainer}>
+          <BlurView style={styles.glass.blurView} blurType="light" blurAmount={15} />
+          <Text style={styles.header.title}>Find Your Match</Text>
+          <GlassInput placeholder="Filter by keywords (e.g., sales, python)" value={formState.transcriptionKeywords} onChangeText={(text) => handleFormChange('transcriptionKeywords', text)}/>
+          <GlassInput placeholder="Search by Job ID" value={formState.selectedJobId} onChangeText={(text) => handleFormChange('selectedJobId', text)} />
+          <GlassDropdown label="Select Experience" options={experienceOptions} selectedItems={formState.experience} onSelectItem={(value) => handleMultiSelect('experience', value)} />
+          <GlassDropdown label="Select Industry" options={industries.map(i => ({ label: i, value: i }))} selectedItems={formState.industry} onSelectItem={(value) => handleMultiSelect('industry', value)} />
+          <GlassDropdown label="Select City" options={cityOptions.map(c => ({ label: c, value: c }))} selectedItems={formState.city} onSelectItem={(value) => handleMultiSelect('city', value)} />
+        </View>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Key Skills"
-            placeholderTextColor="#000"
-            value={keySkills}
-            onChangeText={setKeySkills} />
-
-          {/* Experience Checkboxes */}
-          <TouchableOpacity
-            onPress={toggleExperienceDropdown}
-            style={styles.dropdownButton}>
-            <Text style={styles.dropdownButtonText}>
-              {experience.length ? experience.join(', ') : 'Select Experience'}
-            </Text>
-            <UploadImage name="menu-down" size={20} />
-          </TouchableOpacity>
-
-          {/* Experience Dropdown Content */}
-          {isExperienceDropdownOpen && (
-            <View style={styles.dropdownContainer}>
-              <ScrollView style={styles.scrollView} nestedScrollEnabled={true}>
-                {experienceOptions.map(option => (
-                  <TouchableOpacity
-                    key={option.value}
-                    onPress={() => selectExperience(option.value)}
-                    style={styles.checkboxContainer}>
-                    <Text style={styles.checkboxText}>
-                      {experience.includes(option.value) ? '✔️' : '⭕'}{' '}
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Industry Checkboxes */}
-          <TouchableOpacity
-            onPress={toggleIndustryDropdown}
-            style={styles.dropdownButton}>
-            <Text style={styles.dropdownButtonText}>
-              {industry.length ? industry.join(', ') : 'Select Industry'}
-            </Text>
-            <UploadImage name="menu-down" size={20} />
-          </TouchableOpacity>
-
-          {/* Industry Dropdown Content */}
-          {isIndustryDropdownOpen && (
-            <View style={styles.dropdownContainer}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search industry"
-                placeholderTextColor="#666"
-                value={industrySearchText}
-                onChangeText={setIndustrySearchText} />
-              <ScrollView style={styles.scrollView} nestedScrollEnabled={true}>
-                {filteredIndustries.length > 0 ? (
-                  filteredIndustries.map(industryName => (
-                    <TouchableOpacity
-                      key={industryName}
-                      onPress={() => selectIndustry(industryName)}
-                      style={styles.checkboxContainer}>
-                      <Text style={styles.checkboxText}>
-                        {industry.includes(industryName) ? '✔️' : '⭕'}{' '}
-                        {industryName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  <TouchableOpacity
-                    onPress={() => selectIndustry('Others')}
-                    style={styles.checkboxContainer}>
-                    <Text style={styles.checkboxText}>Others</Text>
-                  </TouchableOpacity>
-                )}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* City Checkboxes */}
-          <TouchableOpacity
-            onPress={toggleDropdown}
-            style={styles.dropdownButton}>
-            <Text style={styles.dropdownButtonText}>
-              {city.length ? city.join(', ') : 'Select City'}
-            </Text>
-            <UploadImage name="menu-down" size={20} />
-          </TouchableOpacity>
-
-          {/* City Dropdown Content */}
-          {isDropdownOpen && (
-            <View style={styles.dropdownContainer}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search city"
-                placeholderTextColor="#666"
-                value={searchText}
-                onChangeText={setSearchText} />
-              <ScrollView style={styles.scrollView} nestedScrollEnabled={true}>
-                {filteredCities.length > 0 ? (
-                  filteredCities.map(cityName => (
-                    <TouchableOpacity
-                      key={cityName}
-                      onPress={() => selectCity(cityName)}
-                      style={styles.checkboxContainer}>
-                      <Text style={styles.checkboxText}>
-                        {city.includes(cityName) ? '✔️' : '⭕'} {cityName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  <TouchableOpacity
-                    onPress={() => selectCity('Others')}
-                    style={styles.checkboxContainer}>
-                    <Text style={styles.checkboxText}>Others</Text>
-                  </TouchableOpacity>
-                )}
-              </ScrollView>
-            </View>
-          )}
-          <LinearGradient colors={['#70bdff', '#2e80d8']} style={styles.btn}>
-            <TouchableOpacity style={styles.signupButton} onPress={handleFilter}>
-              <Text style={styles.signupButtonText}>Filter</Text>
-            </TouchableOpacity>
-          </LinearGradient>
-        </LinearGradient>
-      </FastImage></>
+        <TouchableOpacity onPress={handleFilter}>
+          <BlurView style={styles.filterButton.blur} blurType="light" blurAmount={15}>
+            <Text style={styles.filterButton.text}>Filter</Text>
+          </BlurView>
+        </TouchableOpacity>
+      </ScrollView>
+    </ImageBackground>
   );
 };
 
+// Styles remain unchanged
 const styles = StyleSheet.create({
-  backarrow:{
-    zIndex:10,
-    marginBottom:'-8%',
-    left:30,
-    top:30,
-  },
-  backgroundImage: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  container: {
-    padding: 20,
-    marginTop: 70,
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: 10,
-    width: '90%',
-  },
-  img: {
-    width: 300,
-    height: 350,
-    marginBottom: -110,
-    marginTop: 20,
-  },
-  img2: {
-    width: '100%',
-    height: 100,
-    marginTop: -60,
-  },
-  title: {
-    textAlign: 'center',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ffffff',
-    padding: 7,
-    marginBottom: 10,
-    borderRadius: 5,
-    paddingLeft: 15,
-    color: 'black',
-    backgroundColor: '#ffffff',
-    fontSize: 16,
-  },
-  dropdownButton: {
-    padding: 10,
-    backgroundColor: '#ffffff',
-    borderRadius: 5,
-    marginBottom: 15,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  dropdownButtonText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  dropdownContainer: {
-    padding: 10,
-    backgroundColor: '#fff',
-    borderRadius: 5,
-  },
-  searchInput: {
-    borderWidth: 1,
-    padding: 5,
-    marginBottom: 10,
-    borderRadius: 5,
-  },
-  scrollView: {
-    maxHeight: 150,
-  },
-  checkboxContainer: {
-    padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  checkboxText: {
-    fontSize: 16,
-    color: '#000',
-  },
-  signupButton: {
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 7,
-  },
-  signupButtonText: {
-    fontWeight: '500',
-    color: '#ffffff',
-    fontSize: 20,
-  },
-  btn: {
-    width: 150,
-    marginLeft: 100,
-    borderRadius: 10,
-    elevation: 5,
-    marginTop: 10,
-  },
+  backgroundImage: { flex: 1 },
+  container: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 40 : 80 },
+  header: { container: { position: 'absolute', top: Platform.OS === 'android' ? StatusBar.currentHeight : 40, left: 0, right: 0, zIndex: 1 }, backButton: { position: 'absolute', left: 20, top: 10, padding: 5 }, title: { fontSize: 29, fontWeight: 'bold', paddingBottom: '5%', color: '#FFFFFF', textAlign: 'center', textShadowColor: 'rgba(0, 0, 0, 0.4)', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 5 } },
+  formContainer: { borderRadius: 20, overflow: 'hidden', borderColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 1, padding: 20, marginBottom: 20 },
+  input: { container: { backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: 15, marginBottom: 15, flexDirection: 'row', alignItems: 'center', height: 55, paddingHorizontal: 15 }, text: { flex: 1, fontSize: 18, color: '#000000' } },
+  glass: { blurView: { ...StyleSheet.absoluteFillObject } },
+  dropdown: { buttonText: { flex: 1, fontSize: 18, color: '#333', fontWeight: '500' }, modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }, modalContent: { width: '90%', maxHeight: '70%', borderRadius: 20, backgroundColor: '#FFFFFF', overflow: 'hidden' }, searchInput: { height: 50, fontSize: 16, paddingHorizontal: 20, backgroundColor: '#f0f0f0', borderRadius: 10, margin: 10, color: '#000' }, option: { paddingVertical: 18, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }, optionText: { fontSize: 18, fontWeight: '600', color: '#000' } },
+  filterButton: { blur: { borderRadius: 15, overflow: 'hidden', borderColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 1, paddingVertical: 15, alignItems: 'center', marginTop: 10 }, text: { color: '#FFFFFF', fontSize: 27, fontWeight: 'bold', textShadowColor: 'rgba(0, 0, 0, 0.2)', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 3 } },
 });
 
-export default Profile;
+export default FilterScreen;

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, useCallback} from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,205 +7,251 @@ import {
   TouchableOpacity,
   Alert,
   BackHandler,
-  Image,
-  Text,
   ActivityIndicator,
+  Platform,
+  StatusBar,
+  Text,
 } from 'react-native';
-import axios from 'axios';
-import {Buffer} from 'buffer';
-import Video from 'react-native-video';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+} from 'react-native-reanimated';
 import Header from './header';
-import {useNavigation} from '@react-navigation/native';
-import {PermissionsAndroid, Platform} from 'react-native';
-import env from './env';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import apiClient from './api';
 
-const Myvideos = () => {
+const CACHED_VIDEOS_KEY = 'cachedVideos';
+
+// --- Memoized and Animated Video Item ---
+const VideoThumbnail = memo(({ item, index, onPress }) => {
+  const scale = useSharedValue(0.5);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    scale.value = withDelay(index * 50, withTiming(1));
+    opacity.value = withDelay(index * 50, withTiming(1));
+  }, [index, scale, opacity]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={[styles.videoItemContainer, animatedStyle]}>
+      <TouchableOpacity onPress={onPress} style={styles.videoItem}>
+        {item.thumbnail ? (
+          <ImageBackground
+            source={{ uri: item.thumbnail }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.noThumbnailView}>
+            <Text style={styles.noThumbnailText}>No Thumbnail</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+});
+
+const HomeScreen = () => {
   const navigation = useNavigation();
-  const [loading, setLoading] = useState(true);
+  const isFocused = useIsFocused();
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState({ userId: null, firstName: '' });
+  const [videos, setVideos] = useState([]);
   const [profileImage, setProfileImage] = useState(null);
-  const [videourl, setVideoUrl] = useState([]); // Array of video objects
-  const [hasVideo, setHasVideo] = useState(null);
-  const [userId, setUserId] = useState();
-  const [firstName, setFirstName] = useState('');
-  const [videoId, setVideoId] = useState(null);
-  const [visibleVideoIndex, setVisibleVideoIndex] = useState(null);
-  const [loadingThumbnails, setLoadingThumbnails] = useState(true);
-  const [fetching, setFetching] = useState(false); // Add fetching state
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 50,
-  });
 
-  const onViewableItemsChanged = useCallback(({viewableItems}) => {
-    if (viewableItems.length > 0) {
-      setVisibleVideoIndex(viewableItems[0].index);
+  // --- Pagination and Refreshing State ---
+  const [page, setPage] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreData, setHasMoreData] = useState(true);
+  // ✅ FIX: Added state for pull-to-refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const VIDEO_PAGE_SIZE = 20;
+
+  const fetchVideosFromServer = useCallback(async (currentPage, currentUserId) => {
+    // This guard now correctly prevents fetches for subsequent pages when loading,
+    // or when we know there is no more data.
+    if ((currentPage > 0 && loadingMore) || !hasMoreData) return;
+
+    // Use the appropriate loading indicator
+    const loadingFunction = currentPage === 0 ? setIsLoading : setLoadingMore;
+    if (!isRefreshing) {
+      loadingFunction(true);
     }
-  }, []);
-
-  useEffect(() => {
-    const loadDataFromStorage = async () => {
-      try {
-        // Retrieve values from AsyncStorage
-        const apiFirstName = await AsyncStorage.getItem('firstName');
-        const apiUserId = await AsyncStorage.getItem('userId');
-        const apiVideoId = await AsyncStorage.getItem('videoId');
-        const parsedUserId = apiUserId ? parseInt(apiUserId, 10) : null;
-        setFirstName(apiFirstName);
-        setVideoId(apiVideoId);
-        setUserId(parsedUserId);
-        fetchProfilePic(parsedUserId);
-      } catch (error) {
-        console.error('Error loading user data from AsyncStorage', error);
-      }
-    };
-
-    loadDataFromStorage();
-  }, []);
-
-  useEffect(() => {
-    const backAction = () => {
-      Alert.alert('wezume', 'Do you want to go back', [
-        {
-          text: 'Cancel',
-          onPress: () => null,
-          style: 'cancel',
-        },
-        {text: 'Yes', onPress: () => navigation.goBack()},
-      ]);
-      return true;
-    };
-    BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => {
-      BackHandler.removeEventListener('hardwareBackPress', backAction);
-    };
-  }, []);
-
-  useEffect(() => {
-    const fetchVideos = async () => {
-      if (fetching) return; // Prevent multiple fetch calls
-      setFetching(true);
-      console.log('Fetching videos...'); // Add this line to verify when the function is called
-      try {
-        setLoading(true);
-        const response = await fetch(`${env.baseURL}/api/videos/videos`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch videos: ${response.statusText}`);
-        }
-        const videoData = await response.json();
-        if (!Array.isArray(videoData) || videoData.length === 0) {
-          console.warn('No videos available');
-          setVideoUrl([]);
-          setHasVideo(false);
-          return;
-        }
-        const videoURIs = [];
-        for (let index = 0; index < videoData.length; index++) {
-          const video = videoData[index];
-          console.log(`Processing video ${index + 1}/${videoData.length}`);
-          if (!video.videoUrl) {
-            console.warn(`Video at index ${index} has no URL`);
-            continue;
-          }
-          videoURIs.push({
-            Id: video.id,
-            uri: video.videoUrl,
-            thumbnail: video.thumbnail, // Directly using the thumbnail from the API response
-          });
-          setVideoUrl([...videoURIs]); // Update state with the new videos as they are ready
-          if (index === 0) {
-            setLoadingThumbnails(false); // Stop showing the loading indicator as soon as the first video is ready
-          }
-        }
-        setVideoUrl(videoURIs); // Update state with the new videos once
-        setHasVideo(true);
-      } catch (error) {
-        console.error('Error fetching videos:', error);
-        setHasVideo(false);
-      } finally {
-        setLoading(false);
-        setLoadingThumbnails(false);
-        setFetching(false); // Reset fetching state
-      }
-    };
-    fetchVideos();
-  }, [userId]); // Remove videoId from dependencies to avoid multiple callsr
-
-  const fetchProfilePic = async userId => {
+    
     try {
-      const response = await axios.get(
-        `${env.baseURL}/users/user/${userId}/profilepic`,
-        {
-          responseType: 'arraybuffer',
-        },
-      );
-      if (response.data) {
-        const base64Image = `data:image/jpeg;base64,${Buffer.from(
-          response.data,
-          'binary',
-        ).toString('base64')}`;
-        setProfileImage(base64Image);
-      } else {
-        setProfileImage(null);
+      const response = await apiClient.get(`/api/videos/videos?page=${currentPage}&size=${VIDEO_PAGE_SIZE}`);
+      const { videos: videoData, totalPages, currentPage: responseCurrentPage } = response.data;
+
+      if (!Array.isArray(videoData)) throw new Error('Invalid data format');
+      
+      if (responseCurrentPage >= totalPages - 1 || videoData.length === 0) {
+        setHasMoreData(false);
       }
-    } catch (error) {
-      setProfileImage(null);
+
+      const formattedVideos = videoData
+        .filter(video => video.userId !== currentUserId && video.thumbnail)
+        .map(video => ({
+          id: video.id,
+          userId: video.userId,
+          uri: video.videoUrl || video.uri,
+          firstName: video.firstname || video.firstName || '',
+          profileImage: video.profilepic, 
+          phoneNumber: video.phonenumber || video.phoneNumber || '',
+          email: video.email || '',
+          thumbnail: video.thumbnail || null,
+        }));
+
+      if (currentPage === 0) {
+        setVideos(formattedVideos);
+        await AsyncStorage.setItem(CACHED_VIDEOS_KEY, JSON.stringify(formattedVideos));
+      } else {
+        setVideos(prevVideos => {
+          const newUniqueVideos = formattedVideos.filter(
+            newVideo => !prevVideos.some(prevVideo => prevVideo.id === newVideo.id)
+          );
+          const updatedVideos = [...prevVideos, ...newUniqueVideos];
+          AsyncStorage.setItem(CACHED_VIDEOS_KEY, JSON.stringify(updatedVideos));
+          return updatedVideos;
+        });
+      }
+
+    } catch (err) {
+      console.error('Error fetching videos from server:', err);
+      setHasMoreData(false);
     } finally {
-      setLoading(false);
+      if (!isRefreshing) {
+        loadingFunction(false);
+      }
+    }
+  }, [hasMoreData, loadingMore, isRefreshing]);
+
+  // ✅ FIX: This useEffect now runs ONLY ONCE when the component mounts
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      const firstName = await AsyncStorage.getItem('firstName');
+      const userIdStr = await AsyncStorage.getItem('userId');
+      const userId = userIdStr ? parseInt(userIdStr, 10) : null;
+      const profilePic = await AsyncStorage.getItem('profileUrl');
+
+      if (!userId) {
+        navigation.replace('LoginScreen');
+        return;
+      }
+      const currentUser = { firstName, userId };
+      setUser(currentUser);
+      setProfileImage(profilePic);
+      
+      try {
+        const cachedVideos = await AsyncStorage.getItem(CACHED_VIDEOS_KEY);
+        if (cachedVideos) {
+          setVideos(JSON.parse(cachedVideos));
+        }
+      } catch (error) {
+        console.error("Error loading videos from cache:", error);
+      }
+
+      // Fetch fresh data for page 0 to ensure content isn't stale
+      await fetchVideosFromServer(0, currentUser.userId);
+      setIsLoading(false);
+    };
+
+    loadInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array means it runs only once on mount
+
+
+  // --- Handlers ---
+
+  // ✅ FIX: Created a dedicated refresh handler
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    // Reset pagination state and fetch the first page
+    setPage(0);
+    setHasMoreData(true);
+    await fetchVideosFromServer(0, user.userId);
+    setIsRefreshing(false);
+  }, [user.userId, fetchVideosFromServer]);
+
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMoreData && !isRefreshing) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchVideosFromServer(nextPage, user.userId);
     }
   };
+  
+  const handleVideoPress = useCallback((item, index) => {
+    navigation.navigate('MySwipe', {
+      videoId: item.id,
+      index,
+      allvideos: videos,
+    });
+  }, [navigation, videos]);
+
+  const renderItem = useCallback(({ item, index }) => (
+    <VideoThumbnail
+      item={item}
+      index={index}
+      onPress={() => handleVideoPress(item, index)}
+    />
+  ), [handleVideoPress]);
+
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return <ActivityIndicator style={{ marginVertical: 20 }} size="large" color="#ffffff" />;
+  };
+
+  // --- Back Button Handler ---
+  useEffect(() => {
+    const backAction = () => {
+      if (isFocused) {
+        Alert.alert('Hold on!', 'Are you sure you want to exit?', [
+          { text: 'Cancel', onPress: () => null, style: 'cancel' },
+          { text: 'YES', onPress: () => BackHandler.exitApp() },
+        ]);
+        return true;
+      }
+      return false;
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [isFocused]);
+
   return (
     <View style={styles.container}>
-      <Header profile={profileImage} userName={firstName} />
-      <ImageBackground
-        source={require('./assets/login.jpg')}
-        style={styles.imageBackground}>
-        {loadingThumbnails ? (
+      <Header userName={user.firstName} profile={profileImage} />
+      <ImageBackground source={require('./assets/login.jpg')} style={styles.imageBackground}>
+        {isLoading && videos.length === 0 ? (
           <ActivityIndicator size="large" color="#ffffff" />
         ) : (
           <FlatList
-            data={videourl} // Exclude video with Id 32
-            renderItem={({item, index}) => (
-              <TouchableOpacity
-                onPress={() => {
-                  console.log('VideoId', item.Id, 'Index', index);
-                  navigation.navigate('MySwipe', {
-                    videoId: item.Id,
-                    index: index,
-                  });
-                }}
-                style={[styles.videoItem]}>
-                {item.thumbnail ? ( // Using the thumbnail property here
-                  <ImageBackground
-                    source={{uri: item.thumbnail}}
-                    style={styles.videoPlayer}
-                    resizeMode="contain">
-                    {visibleVideoIndex === index && (
-                      <Video
-                        source={{uri: item.thumbnail}}
-                        paused={false}
-                        style={styles.videoPlayer}
-                        resizeMode="contain"
-                        muted={true}
-                        onError={error =>
-                          console.error('Video playback error:', error)
-                        }
-                      />
-                    )}
-                  </ImageBackground>
-                ) : (
-                  <View style={styles.videoPlayer}>
-                    <Text>Thumbnail not available</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-            keyExtractor={(item, index) => index.toString()}
+            data={videos}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id.toString()}
             numColumns={4}
-            contentContainerStyle={styles.videoList}
-            columnWrapperStyle={styles.columnWrapper}
-            initialNumToRender={2}
-            onViewableItemsChanged={onViewableItemsChanged.current}
-            viewabilityConfig={viewabilityConfig.current}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={21}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={renderFooter}
+            ListEmptyComponent={!isLoading && !isRefreshing ? (
+                <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>No videos available right now.</Text>
+                </View>
+            ) : null}
+            // ✅ FIX: Added props for pull-to-refresh
+            onRefresh={handleRefresh}
+            refreshing={isRefreshing}
           />
         )}
       </ImageBackground>
@@ -214,36 +260,49 @@ const Myvideos = () => {
 };
 
 const styles = StyleSheet.create({
-  reactions: {
-    flexDirection: 'row',
-  },
   container: {
     flex: 1,
-    justifyContent: 'center',
-  },
-  videoItem: {
-    flex: 1,
-  },
-  columnWrapper: {
-    justifyContent: 'flex-start',
-    aspectRatio: 2.27,
-  },
-  videoPlayer: {
-    height: '99%',
-    width: '100%',
+    backgroundColor: '#000',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 25,
   },
   imageBackground: {
     flex: 1,
     justifyContent: 'center',
   },
-  videoList: {
-    marginTop: 1,
+  videoItemContainer: {
+    flex: 1 / 4,
+    aspectRatio: 9 / 16,
+    padding: 1,
   },
-  emptyListText: {
-    textAlign: 'center',
+  videoItem: {
+    flex: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#222',
+  },
+  thumbnail: {
+    flex: 1,
+  },
+  noThumbnailView: {
+    flex: 1,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noThumbnailText: {
+    color: '#888',
+    fontSize: 10,
+  },
+  emptyContainer: {
+    flex: 1,
+    marginTop: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    color: 'white',
     fontSize: 18,
-    color: 'gray',
   },
 });
 
-export default Myvideos;
+export default HomeScreen;

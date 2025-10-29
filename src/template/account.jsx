@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,462 +8,388 @@ import {
   ImageBackground,
   ScrollView,
   Linking,
+  ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
+import SkillsIcon from 'react-native-vector-icons/Foundation';
+import ExperienceIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import IndustryIcon from 'react-native-vector-icons/FontAwesome';
+import LocationIcon from 'react-native-vector-icons/Ionicons';
+import LanguageIcon from 'react-native-vector-icons/FontAwesome';
+import EmailIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import PhoneIcon from 'react-native-vector-icons/FontAwesome';
+import RoleIcon from 'react-native-vector-icons/MaterialIcons';
+import OrgIcon from 'react-native-vector-icons/FontAwesome5';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Skills from 'react-native-vector-icons/Foundation';
-import Expe from 'react-native-vector-icons/MaterialCommunityIcons';
-import Indus from 'react-native-vector-icons/FontAwesome';
-import Locat from 'react-native-vector-icons/FontAwesome';
-import Back from 'react-native-vector-icons/AntDesign';
-import Lang from 'react-native-vector-icons/FontAwesome';
-import Email from 'react-native-vector-icons/Entypo';
-import Phone from 'react-native-vector-icons/FontAwesome';
 import axios from 'axios';
-import {Buffer} from 'buffer';
+import { Buffer } from 'buffer';
 import env from './env';
+import Header from './header'; // Assuming Header component is in the same directory
+import apiClient from './api';
+
+// A reusable component for each detail card
+const InfoCard = ({ title, children, icon }) => (
+  <View style={styles.card}>
+    <View style={styles.cardHeader}>
+      {icon}
+      <Text style={styles.cardTitle}>{title}</Text>
+    </View>
+    <View style={styles.cardContent}>
+      {children}
+    </View>
+  </View>
+);
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
+
+  // Consolidated state for user data
+  const [userData, setUserData] = useState(null);
   const [profileImage, setProfileImage] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState();
-  const [city, setCity] = useState('');
-  const [skills, setSkills] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [languages , setLanguages] = useState('');
-  const [industry, setIndustry] = useState('');
-  const [experience, setExperience] = useState('');
-  const [currentEmployer, setCurrentEmployer] = useState('');
-  const [organizationName , setOrganizationName] = useState('');
   const [likeCount, setLikeCount] = useState(0);
-  const [jobOption,setJobOption] = useState('');
-  const [currentRole,setCurrentRole] = useState('');
-  const [videoId, setVideoId] = useState(null); // Example videoId (this should be dynamically assigned)
-  const [lastName,setLastName] = useState('');
-  const [email,setEmail] = useState('');
-  const [phoneNumber,setPhoneNumber] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const Asyncstorage = async () => {
-      try {
-        const apiFirstName = await AsyncStorage.getItem('firstName');
-        const apiIndustry = await AsyncStorage.getItem('industry');
-        const apiUserId = await AsyncStorage.getItem('userId');
-        const apiVideoId = await AsyncStorage.getItem('videoId');
-        const apicurrentEmployer = await AsyncStorage.getItem(
-          'currentEmployer',
-        );
-
-        if (apiUserId) {
-          setUserId(apiUserId);
-        }
-        setFirstName(apiFirstName || '');
-        setIndustry(apiIndustry || '');
-        setCurrentEmployer(apicurrentEmployer || '');
-        setVideoId(apiVideoId || '');
-
-        console.log('AsyncStorage data:', {
-          apiFirstName,
-          apiIndustry,
-          apiUserId,
-          apiVideoId,
-          apicurrentEmployer,
-        });
-
-        if (userId) {
-          fetchUserDetails(userId); // Pass apiUserId to fetchUserDetails
-        }
-        if (videoId) {
-          fetchLikeCount(videoId);
-        }
-      } catch (error) {
-        console.error('Error getting data from AsyncStorage:', error);
-      }
-    };
-
-    Asyncstorage();
-  }); // Empty array to run only once after component mount
-
-  // Fetch user details and store in AsyncStorage
-  const fetchUserDetails = async userId => {
+  // Fetches primary user details, sets the profile pic, and caches them
+  const fetchUserDetails = async (userId) => {
     try {
-      console.log('Fetching user details for userId:', userId); // Debug log
+      const response = await apiClient.get(`/api/videos/getOwnerByUserId/${userId}`);
+      const freshUserData = response.data;
 
-      const response = await axios.get(
-        `${env.baseURL}/api/videos/getOwnerByUserId/${userId}`,
-      );
+      if (freshUserData) {
+        // Update user data state
+        setUserData(freshUserData);
+        
+        // **Update profile image state from the API response**
+        if (freshUserData.profilePic) {
+          setProfileImage(freshUserData.profilePic);
+          // Asynchronously update the cache with the fresh data
+          await AsyncStorage.setItem('cachedProfileImage', freshUserData.profilePic);
+        }
 
-      // console.log('User Details Response:', response);
-
-      if (response.data) {
-        const user = response.data;
-
-        // Safely store user details in AsyncStorage
-        await handleAsyncStorage('firstName', user.firstName);
-        await handleAsyncStorage('lastName',user.lastName);
-        await handleAsyncStorage('industry', user.industry);
-        await handleAsyncStorage('experience', user.experience);
-        await handleAsyncStorage('city', user.city);
-        await handleAsyncStorage('currentEmployer', user.currentEmployer);
-        await handleAsyncStorage('languages' , user.languages);
-        await handleAsyncStorage('jobOption',user.jobOption);
-        await handleAsyncStorage('organizationName',user.organizationName);
-        await handleAsyncStorage('currentRole',user.currentRole);
-        await handleAsyncStorage('KeySkills',user.keySkills);
-        await handleAsyncStorage('email',user.email);
-        await handleAsyncStorage('phoneNumber',user.phoneNumber);
-
-
-        // Update state
-        setFirstName(user.firstName || '');
-        setIndustry(user.industry || '');
-        setExperience(user.experience || '');
-        setCity(user.city || '');
-        setSkills(user.keySkills || '');
-        setCurrentEmployer(user.currentEmployer || '');
-        setLanguages(user.languages || '');
-        setJobOption(user.jobOption || '');
-        setOrganizationName(user.organizationName || '');
-        setCurrentRole(user.currentRole || '');
-        setLastName(user.lastName || '');
-        setPhoneNumber(user.phoneNumber);
-        setEmail(user.email);
-
-        console.log('User Data:', {
-          firstName: user.firstName,
-          industry: user.industry,
-          experience: user.experience,
-          city: user.city,
-          KeySkills: user.keySkills,
-          currentEmployer: user.currentEmployer,
-        });
+        // Cache the latest user data
+        await AsyncStorage.setItem('cachedUserData', JSON.stringify(freshUserData));
       }
     } catch (error) {
       console.error('Error fetching user details:', error);
+      // Optionally, alert the user that fresh data couldn't be loaded
     }
   };
 
-  // Helper function to safely store in AsyncStorage
-  const handleAsyncStorage = async (key, value) => {
-    if (value !== null && value !== undefined) {
-      await AsyncStorage.setItem(key, value);
-    } else {
-      await AsyncStorage.removeItem(key); // Remove if null or undefined
-    }
-  };
-
-  useEffect(() => {
-    if (userId) {
-      fetchProfilePic(userId);
-    } else {
-      console.error('No userId found');
-      setLoading(false);
-    }
-  }, [userId]);
-
-  // Fetch profile image
-  const fetchProfilePic = async userId => {
+  // Fetches the like count
+  const fetchLikeCount = async (videoId) => {
     try {
-      const response = await axios.get(
-        `${env.baseURL}/users/user/${userId}/profilepic`,
-        {
-          responseType: 'arraybuffer',
-        },
-      );
-
-      if (response.data) {
-        const base64Image = `data:image/jpeg;base64,${Buffer.from(
-          response.data,
-          'binary',
-        ).toString('base64')}`;
-        setProfileImage(base64Image);
-      } else {
-        console.error('Profile picture not found in response');
-        setProfileImage(null);
-      }
-    } catch (error) {
-      console.error('Error fetching profile pic:', error);
-      setProfileImage(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchLikeCount = async videoId => {
-    console.log('Fetching like count for videoId:', videoId); // Check if the videoId is correct
-    try {
-      const response = await axios.get(
-        `${env.baseURL}/api/videos/${videoId}/like-count`, // Use videoId in the URL
-      );
-      console.log('API response:', response.data); // Check if the data is correct
-      setLikeCount(response.data); // Update state with like count or default to 0
+      const response = await apiClient.get(`/api/videos/${videoId}/like-count`);
+      setLikeCount(response.data || 0);
     } catch (error) {
       console.error('Error fetching like count:', error);
-      setLikeCount(0); // Reset like count on error
+      setLikeCount(0);
     }
   };
 
-  const DeleteLink = () => {
-      const url = 'https://wezume.com/delete/';
-      Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
-    };
+  // This effect runs when the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const loadProfileData = async () => {
+        setLoading(true);
+
+        // --- 1. LOAD FROM CACHE for an instant UI response ---
+        try {
+          const [cachedData, cachedImage] = await Promise.all([
+              AsyncStorage.getItem('cachedUserData'),
+              AsyncStorage.getItem('cachedProfileImage')
+          ]);
+
+          if (cachedData) {
+            setUserData(JSON.parse(cachedData));
+          }
+          if (cachedImage) {
+            setProfileImage(cachedImage);
+          }
+        } catch (e) {
+          console.error("Failed to load data from cache", e);
+        }
+
+        // --- 2. FETCH FRESH DATA in the background to update UI and cache ---
+        try {
+          const userId = await AsyncStorage.getItem('userId');
+          const videoId = await AsyncStorage.getItem('videoId');
+
+          if (!userId) {
+            console.log("User ID not found, navigating to login.");
+            navigation.navigate('LoginScreen');
+            return;
+          }
+
+          // Fetch all fresh data in parallel
+          await Promise.all([
+            fetchUserDetails(userId), // This function now handles the profile pic
+            videoId ? fetchLikeCount(videoId) : Promise.resolve(),
+          ]);
+
+        } catch (error) {
+          console.error('Failed to refresh profile data from server:', error);
+        } finally {
+          setLoading(false); // Stop loading after fresh data is fetched or fails
+        }
+      };
+
+      loadProfileData();
+    }, [navigation]) // navigation is a stable dependency
+  );
+
+  // Opens the account deletion link
+  const openDeleteLink = () => {
+    const url = 'https://wezume.com/delete/';
+    Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
+  };
+  
+  // Renders job-specific details to keep the main return statement clean
+  const renderJobSpecificDetails = () => {
+    if (!userData) return null;
+
+    switch (userData.jobOption) {
+      case 'Employee':
+        return (
+          <>
+            <InfoCard title="Skills" icon={<SkillsIcon name="social-skillshare" size={24} color="#3498db" />}>
+              <Text style={styles.cardText}>{userData.keySkills}</Text>
+            </InfoCard>
+            <InfoCard title="Experience" icon={<ExperienceIcon name="briefcase-outline" size={24} color="#2ecc71" />}>
+              <Text style={styles.cardText}>{userData.experience} years</Text>
+              <Text style={styles.cardSubText}>at {userData.currentEmployer}</Text>
+            </InfoCard>
+            <InfoCard title="Industry" icon={<IndustryIcon name="industry" size={20} color="#e67e22" />}>
+               <Text style={styles.cardText}>{userData.industry}</Text>
+            </InfoCard>
+          </>
+        );
+      case 'Investor':
+      case 'Employer':
+        return (
+          <>
+            <InfoCard title="Organization" icon={<OrgIcon name="building" size={20} color="#3498db" />}>
+              <Text style={styles.cardText}>{userData.currentEmployer}</Text>
+            </InfoCard>
+             <InfoCard title="Industry" icon={<IndustryIcon name="industry" size={20} color="#e67e22" />}>
+               <Text style={styles.cardText}>{userData.industry}</Text>
+            </InfoCard>
+          </>
+        );
+      case 'Entrepreneur':
+         return (
+          <>
+            <InfoCard title="Key Skills" icon={<SkillsIcon name="social-skillshare" size={24} color="#3498db" />}>
+              <Text style={styles.cardText}>{userData.keySkills}</Text>
+            </InfoCard>
+            <InfoCard title="Current Role" icon={<RoleIcon name="person" size={24} color="#9b59b6" />}>
+              <Text style={styles.cardText}>{userData.currentRole}</Text>
+            </InfoCard>
+             <InfoCard title="Industry" icon={<IndustryIcon name="industry" size={20} color="#e67e22" />}>
+               <Text style={styles.cardText}>{userData.industry}</Text>
+            </InfoCard>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
+  if (loading && !userData) { // Only show full-screen loader on the very first load
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text>Loading Profile...</Text>
+      </View>
+    );
+  }
 
   return (
-    <>
-      <ImageBackground
-        source={require('./assets/login.jpg')}
-        style={styles.bodycont}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Back name={'leftcircle'} size={24} style={styles.backoption} />
-        </TouchableOpacity>
-      </ImageBackground>
-      <View style={styles.container}>
-        {/* Header with Profile Picture */}
-        <View style={styles.header}>
-          <Image source={{uri: profileImage}} style={styles.profileImage} />
-          <Text style={styles.profileName}>{firstName} {lastName}</Text>
-          <Text style={styles.jobTitle}>{industry}</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <Header profile={profileImage} userName={userData?.firstName} />
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        <ImageBackground
+          source={require('./assets/login.jpg')}
+          style={styles.profileHeader}
+          imageStyle={styles.headerBackgroundImage}
+        >
+          <View style={styles.overlay}>
+            <Image 
+              source={profileImage ? { uri: profileImage } : require('./assets/headlogo.png')} // Fallback image
+              style={styles.profileImage} 
+            />
+            <Text style={styles.profileName}>{userData?.firstName} {userData?.lastName}</Text>
+            <Text style={styles.jobTitle}>{userData?.industry}</Text>
+            <View style={styles.likesContainer}>
+              <FontAwesome name="thumbs-up" size={16} color="#fff" />
+              <Text style={styles.likesText}>{likeCount} Likes</Text>
+            </View>
+          </View>
+        </ImageBackground>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity style={styles.profileButton} onPress={() => navigation.navigate('Edit')}>
+            <Text style={styles.profileButtonText}>Edit Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.profileButton, styles.deleteButton]} onPress={openDeleteLink}>
+            <Text style={[styles.profileButtonText, styles.deleteButtonText]}>Delete Account</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Likes Section */}
-        <View style={styles.likesContainer}>
-          <FontAwesome name="thumbs-up" size={24} color="#007bff" />
-          <Text style={styles.likesText}>{likeCount}</Text>
+        <View style={styles.detailsContainer}>
+            <InfoCard title="Contact Information" icon={<EmailIcon name="email-outline" size={24} color="#e74c3c" />}>
+                <Text style={styles.cardText}>{userData?.email}</Text>
+                <Text style={styles.cardSubText}>{userData?.phoneNumber}</Text>
+            </InfoCard>
+            <InfoCard title="Location" icon={<LocationIcon name="location-outline" size={24} color="#1abc9c" />}>
+                <Text style={styles.cardText}>{userData?.city}</Text>
+            </InfoCard>
+
+            {renderJobSpecificDetails()}
         </View>
-
-        {/* Edit Profile Button */}
-        <TouchableOpacity style={styles.editProfileButton} onPress={()=> navigation.navigate('Edit')}>
-          <Text style={styles.editProfileText}>Edit Profile</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.editProfileButton} onPress={DeleteLink}>
-          <Text style={styles.editProfileText}>Delete Account</Text>
-        </TouchableOpacity>
-
-        <ScrollView
-          style={{width: '100%'}}
-          showsVerticalScrollIndicator={false}>
-          {/* Skills Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Email name={'email'} size={16} /> Email
-            </Text>
-            <Text style={styles.sectionContent}>{email}</Text>
-          </View>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Phone name={'mobile-phone'} size={22} /> Phone Number
-            </Text>
-            <Text style={styles.sectionContent}>{phoneNumber}</Text>
-          </View>
-          {jobOption === 'Employee' && (
-            <>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Skills name={'social-skillshare'} size={22} /> Skills
-            </Text>
-            <Text style={styles.sectionContent}>{skills}</Text>
-          </View>
-
-          {/* Experience Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Expe name={'shield-star-outline'} size={20} /> Experience
-            </Text>
-            <Text style={styles.sectionContent}>
-              {industry} at {currentEmployer} || years of experience{''}
-              {experience}
-            </Text>
-            {/* <TouchableOpacity>
-          <Text style={styles.viewMore}>See all Experiences</Text>
-        </TouchableOpacity> */}
-          </View>
-
-          {/* Industry and City Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Indus name={'industry'} size={15} /> Industry
-            </Text>
-            <Text style={styles.sectionContent}>{industry}</Text>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Locat name={'location-arrow'} size={20} /> City
-            </Text>
-            <Text style={styles.sectionContent}>{city}</Text>
-          </View>
-          {/* <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Lang name={'language'} size={18} /> Language
-            </Text>
-            <Text style={styles.sectionContent}>{}</Text>
-          </View> */}
-          </>
-          )}
-          {jobOption === 'Investor' && (
-           <>
-           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Lang name={'language'} size={18} /> Organization Name
-            </Text>
-            <Text style={styles.sectionContent}>{currentEmployer}</Text>
-          </View>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Locat name={'location-arrow'} size={20} /> City
-            </Text>
-            <Text style={styles.sectionContent}>{city}</Text>
-          </View>
-           </>
-          )}
-          {jobOption === 'Employer' && (
-           <>
-           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Lang name={'language'} size={18} /> Organization Name
-            </Text>
-            <Text style={styles.sectionContent}>{currentEmployer}</Text>
-          </View>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Locat name={'location-arrow'} size={20} /> City
-            </Text>
-            <Text style={styles.sectionContent}>{city}</Text>
-          </View>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Locat name={'location-arrow'} size={20} /> Industry
-            </Text>
-            <Text style={styles.sectionContent}>{industry}</Text>
-          </View>
-           </>
-          )}
-          {jobOption === 'Entrepreneur' && (
-           <>
-           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Lang name={'language'} size={18} /> Key Skills
-            </Text>
-            <Text style={styles.sectionContent}>{skills}</Text>
-          </View>
-           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Lang name={'language'} size={18} /> Current Role
-            </Text>
-            <Text style={styles.sectionContent}>{currentRole}</Text>
-          </View>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Locat name={'location-arrow'} size={20} /> City
-            </Text>
-            <Text style={styles.sectionContent}>{city}</Text>
-          </View>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              <Locat name={'location-arrow'} size={20} /> Industry
-            </Text>
-            <Text style={styles.sectionContent}>{industry}</Text>
-          </View>
-           </>
-          )}
-        </ScrollView>
-      </View>
-    </>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
+// --- Styles remain unchanged ---
 const styles = StyleSheet.create({
-  bodycont: {
-    flex: 2,
-    resizeMode: 'cover',
-    width: '100%',
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f4f6f9',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   container: {
-    flex: 9,
-    padding: 20,
-    backgroundColor: '#f7f8fc',
+    flex: 1,
   },
-  header: {
+  profileHeader: {
+    height: 200, 
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-    marginTop: '-20%',
+  },
+  headerBackgroundImage: {
+    opacity: 0.7,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 15,
   },
   profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 10,
-    elevation: 10,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: '#fff',
+    marginBottom: 8,
   },
   profileName: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    color:'black',
+    color: '#fff',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
   },
   jobTitle: {
-    fontSize: 16,
-    color: 'gray',
+    fontSize: 14,
+    color: '#eee',
   },
   likesContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'lightblue',
-    height: 40,
-    width: 60,
-    borderRadius: 50,
-    marginLeft: '40%',
-    marginBottom: 20,
-    elevation: 10,
+    backgroundColor: 'rgba(0, 123, 255, 0.8)',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginTop: 8,
   },
   likesText: {
-    fontSize: 16,
-    marginLeft: 5,
-    color: 'gray',
+    fontSize: 13,
+    marginLeft: 8,
+    color: '#fff',
+    fontWeight: '600',
   },
-  editProfileButton: {
-    backgroundColor: '#007bff',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-    alignItems: 'center',
-    marginBottom: 20,
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 15,
+    marginTop: -30,
   },
-  editProfileText: {
-    color: 'white',
-    fontSize: 16,
-  },
-  section: {
-    marginBottom: 15,
-    backgroundColor: '#ffffff',
-    height: 100,
-    borderRadius: 10,
+  profileButton: {
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 25,
     elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    flex: 1,
+    marginHorizontal: 5,
+    alignItems: 'center',
   },
-  sectionTitle: {
+  deleteButton: {
+    backgroundColor: '#e74c3c',
+  },
+  profileButtonText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  deleteButtonText: {
+    color: '#fff',
+  },
+  detailsContainer: {
+    paddingHorizontal: 15,
+    paddingBottom: 20,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 20,
+    marginBottom: 15,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    paddingBottom: 10,
+  },
+  cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: 'gray',
-    marginBottom: -5,
-    padding: 10,
+    color: '#333',
+    marginLeft: 10,
   },
-  sectionContent: {
+  cardContent: {
+  },
+  cardText: {
     fontSize: 16,
-    color: 'gray',
-    padding:10,
-    
+    color: '#555',
+    lineHeight: 24,
   },
-  viewMore: {
-    color: '#007bff',
-    fontSize: 16,
-  },
-  backoption: {
-    color: '#ffffff',
-    padding: 10,
-    marginLeft: '3%',
-    marginTop: '15%',
+  cardSubText: {
+    fontSize: 14,
+    color: '#777',
+    marginTop: 5,
   },
 });
 

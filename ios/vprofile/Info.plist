@@ -74,6 +74,8 @@
 	<string>We need access to your photos for saving and accessing media.</string>
 	<key>NSUserNotificationUsageDescription</key>
 	<string>We need permission to send you notifications for updates and alerts.</string>
+	<key>NSMotionUsageDescription</key>
+    <string>This app uses motion data to animate the screen based on device tilt.</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>AntDesign.ttf</string>

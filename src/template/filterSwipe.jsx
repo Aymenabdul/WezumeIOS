@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -10,843 +10,452 @@ import {
   Image,
   BackHandler,
   Dimensions,
-  ActivityIndicator, // Import ActivityIndicator
+  ActivityIndicator,
+  Platform,
+  StatusBar,
 } from 'react-native';
-import axios from 'axios';
-import {Buffer} from 'buffer';
 import Video from 'react-native-video';
-import {useRoute} from '@react-navigation/native';
-import {useNavigation} from '@react-navigation/native';
+import { useIsFocused, useRoute, useNavigation } from '@react-navigation/native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  withDelay,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Ant from 'react-native-vector-icons/AntDesign';
 import Shares from 'react-native-vector-icons/Entypo';
 import Like from 'react-native-vector-icons/Foundation';
-import Share from 'react-native-share'; // Import the share module
-import RNFS from 'react-native-fs';
+import Score from 'react-native-vector-icons/MaterialCommunityIcons';
 import Phone from 'react-native-vector-icons/FontAwesome6';
 import Whatsapp from 'react-native-vector-icons/Entypo';
-import env from './env';
+import PlayIcon from 'react-native-vector-icons/Ionicons';
+import HeartIcon from 'react-native-vector-icons/AntDesign';
+import BrokenHeartIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Share from 'react-native-share';
+import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-const windowHeight = Dimensions.get('screen').height;
-const FilterSwipe = () => {
-  const navigation = useNavigation();
-  const [loading, setLoading] = useState(true);
-  const [profileImage, setProfileImage] = useState(null);
-  const [videourl, setVideoUrl] = useState([]); // Array of video objects
-  const [hasVideo, setHasVideo] = useState(null);
-  const [userId, setUserId] = useState();
-  const [firstName, setFirstName] = useState('');
-  const [likeCount, setLikeCount] = useState(0);
-  const [isLiked, setIsLiked] = useState({});
-  const [videoId, setVideoId] = useState(null);
-  const [jobOption, setJobOption] = useState('');
-  const [currentTime, setCurrentTime] = useState(0);
+import LinearGradient from 'react-native-linear-gradient';
+import apiClient from './api';
+
+const { height: windowHeight } = Dimensions.get('window');
+
+// --- Reusable Animated Icon Button Component ---
+const AnimatedIconButton = ({ onPress, children }) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const handlePressIn = () => (scale.value = withSpring(0.8));
+  const handlePressOut = () => (scale.value = withSpring(1));
+  return (
+    <Animated.View style={animatedStyle}>
+      <TouchableOpacity onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onPress} style={styles.iconButton}>
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+// --- Main Video Player Component ---
+const VideoPlayer = memo(({ item, isActive, onLike, isLiked, loggedInUserRole }) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
+  const [error, setError] = useState(null);
   const [subtitles, setSubtitles] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState(null);
-  const [currentVideo, setCurrentVideo] = useState(null);
-  const [selectedVideoUri, setSelectedVideoUri] = useState('');
-  const [Index, setSelectedIndex] = useState(null);
-  const [currentSubtitle, setCurrentSubtitle] = useState('');
-  const [page, setPage] = useState(0);
-  const pageSize = 1;
-  const [isVideoLoading, setIsVideoLoading] = useState(true); // State to manage video loading
+  const [currentTime, setCurrentTime] = useState(0);
+  const { id, uri, profileImage, firstName, email, phoneNumber, thumbnail, userId: videoOwnerId } = item;
+  const navigation = useNavigation();
 
-  const route = useRoute();
-  const selectedVideoId = route?.params?.videoId ?? '';
-  const selectedIndex = route?.params?.index ?? '';
+  const [likeCount, setLikeCount] = useState(0);
+  const [totalScore, setTotalScore] = useState(0);
+
+  const playPauseOpacity = useSharedValue(0);
+  const likeHeartScale = useSharedValue(0);
+  const likeHeartOpacity = useSharedValue(0);
+  const dislikeHeartScale = useSharedValue(0);
+  const dislikeHeartOpacity = useSharedValue(0);
 
   useEffect(() => {
-    if (selectedVideoId) {
-      setVideoId(selectedVideoId);
-      setSelectedIndex(selectedIndex);
-      setCurrentVideo(selectedVideoId);
-    }
-  }, [selectedVideoId, selectedIndex]);
+    if (isActive) {
+      // Reset state for the new video
+      setIsLoading(true);
+      setError(null);
+      setLikeCount(0);
+      setTotalScore(0);
+      setSubtitles([]);
 
-  const fetchLikeStatus = async userId => {
-    if (!userId) {
-      console.error('Error: userId is invalid or undefined.');
-      return; // Exit early if userId is not valid
-    }
-    try {
-      const response = await axios.get(
-        `${env.baseURL}/api/videos/likes/status?userId=${userId}`,
-      );
-      const likeStatus = response.data;
-      setIsLiked(likeStatus);
-    } catch (error) {
-      console.error(
-        'Error fetching like status:',
-        error.response?.data || error.message,
-      );
-    }
-  };
+      const fetchMetadata = async () => {
+        const results = await Promise.allSettled([
+          apiClient.get(`/api/videos/${id}/like-count`),
+          apiClient.get(`/api/totalscore/${id}`),
+          apiClient.get(`/api/videos/user/${id}/subtitles.srt`)
+        ]);
 
-  const videoRefs = useRef([]); // Array to hold references to video players
-  // useEffect(() => {
-  //   const activeSubtitle = subtitles.find(
-  //     subtitle =>
-  //       currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
-  //   );
-  //   setCurrentSubtitle(activeSubtitle ? activeSubtitle.text : '');
-  //   const parseTimeToSeconds = timeStr => {
-  //     const [hours, minutes, seconds] = timeStr.split(':');
-  //     const [sec, milli] = seconds.split(',');
-  //     return (
-  //       parseInt(hours, 10) * 3600 +
-  //       parseInt(minutes, 10) * 60 +
-  //       parseInt(sec, 10) +
-  //       parseInt(milli, 10) / 1000
-  //     );
-  //   };
-  //   const parseSRT = srtText => {
-  //     const lines = srtText.split('\n');
-  //     const parsedSubtitles = [];
-  //     let i = 0;
+        const [likeResult, scoreResult, subtitlesResult] = results;
 
-  //     while (i < lines.length) {
-  //       if (lines[i].match(/^\d+$/)) {
-  //         const startEnd = lines[i + 1].split(' --> ');
-  //         const startTime = parseTimeToSeconds(startEnd[0]);
-  //         const endTime = parseTimeToSeconds(startEnd[1]);
-  //         let text = '';
-  //         i += 2;
-  //         while (i < lines.length && lines[i].trim() !== '') {
-  //           text += lines[i] + '\n';
-  //           i++;
-  //         }
-  //         parsedSubtitles.push({startTime, endTime, text: text.trim()});
-  //       } else {
-  //         i++;
-  //       }
-  //     }
-  //     return parsedSubtitles;
-  //   };
-
-  //   const fetchSubtitles = async () => {
-  //     try {
-  //       const subtitlesUrl = `${env.baseURL}/api/videos/user/${videoId}/subtitles.srt`;
-  //       const response = await fetch(subtitlesUrl);
-  //       const text = await response.text();
-  //       const parsedSubtitles = parseSRT(text);
-  //       setSubtitles(parsedSubtitles);
-  //     } catch (error) {
-  //       console.error('Error fetching subtitles:', error);
-  //     }
-  //   };
-  //   fetchSubtitles(videoId);
-  // }, [currentTime, subtitles, videoId]);
-  useEffect(() => {
-    const loadDataFromStorage = async () => {
-      try {
-        const apiFirstName = await AsyncStorage.getItem('firstName');
-        const apiUserId = await AsyncStorage.getItem('userId');
-        const jobOption = await AsyncStorage.getItem('jobOption');
-        // const apiVideoId = await AsyncStorage.getItem('videoId');
-        const parsedUserId = apiUserId ? parseInt(apiUserId, 10) : null;
-        // setVideoId(apiVideoId);
-        setFirstName(apiFirstName);
-        setJobOption(jobOption);
-        setUserId(parsedUserId);
-        fetchLikeStatus(parsedUserId);
-        fetchProfilePic(parsedUserId);
-      } catch (error) {
-        console.error('Error loading user data from AsyncStorage', error);
-      }
-    };
-
-    loadDataFromStorage();
-  }, []);
-  useEffect(() => {
-    const backAction = () => {
-      Alert.alert('Exit App', 'Do you want to go back?', [
-        {
-          text: 'Cancel',
-          onPress: () => null,
-          style: 'cancel',
-        },
-        {text: 'Yes', onPress: () => navigation.goBack()},
-      ]);
-      return true;
-    };
-    BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => {
-      BackHandler.removeEventListener('hardwareBackPress', backAction);
-    };
-  }, [navigation]);
-  useEffect(() => {
-    const fetchVideos = async (page = 0, size = 1) => {
-      try {
-        setLoading(true);
-        const keySkills = ''; // Define keySkills variable
-        const experience = ''; // Define experience variable
-        const industry = ''; // Define industry variable
-        const city = ''; // Define city variable
-        const user = {
-          keySkills,
-          experience,
-          industry,
-          city,
-        };
-        const response = await axios.post(
-          `${env.baseURL}/api/videos/filter`,
-          user,
-        );
-
-        if (response.status === 204) {
-          setHasVideo(false);
-          return;
-        }
-
-        const videoData = response.data;
-
-        if (!Array.isArray(videoData) || videoData.length === 0) {
-          setHasVideo(false);
-          return;
-        }
-
-        // Reorder videoData to set the passed indexed video to the first position
-        if (selectedIndex !== '') {
-          const selectedVideoIndex = parseInt(selectedIndex, 10);
-          if (
-            selectedVideoIndex >= 0 &&
-            selectedVideoIndex < videoData.length
-          ) {
-            const [selectedVideo] = videoData.splice(selectedVideoIndex, 1);
-            videoData.unshift(selectedVideo);
-          }
-        }
-
-        const newVideos = videoData.map(video => {
-          const base64Image = video.profilePic
-            ? `data:image/jpeg;base64,${video.profilePic}`
-            : null;
-          // Set the videoId based on the fetched video
-          setVideoId(video.id);
-          return {
-            id: video.id,
-            userId: video.userId,
-            uri: video.videoUrl,
-            firstName: video.firstName,
-            profileImage: base64Image,
-            phoneNumber: video.phoneNumber,
-            email: video.email,
-            thumbnail: video.thumbnail || null,
-          };
-        });
-        setVideoUrl(prevVideos => {
-          const filteredVideos = newVideos.filter(
-            video => video.uri !== selectedVideoUri,
-          );
-          const uniqueVideos = [...prevVideos, ...filteredVideos].filter(
-            (video, index, self) =>
-              index === self.findIndex(v => v.uri === video.uri),
-          );
-          return uniqueVideos.map((video, idx) => ({
-            ...video,
-            key: `video-${video.id}-${idx}`,
-          }));
-        });
-
-        setPage(prevPage => prevPage + 1);
-        setHasVideo(true);
-      } catch (error) {
-        if (error.response && error.response.status === 400) {
-          console.error('Error fetching videos:', error.response.data);
+        if (likeResult.status === 'fulfilled') {
+          setLikeCount(likeResult.value.data || 0);
         } else {
-          console.error('Error fetching videos:', error);
+          console.error(`Failed to fetch like count for video ${id}:`, likeResult.reason?.response?.data || likeResult.reason?.message);
         }
-        setHasVideo(false);
-      } finally {
-        setLoading(false);
+
+        if (scoreResult.status === 'fulfilled') {
+          setTotalScore(scoreResult.value.data?.totalScore || 0);
+        } else {
+          console.error(`Failed to fetch total score for video ${id}:`, scoreResult.reason?.response?.data || scoreResult.reason?.message);
+        }
+
+        if (subtitlesResult.status === 'fulfilled') {
+          setSubtitles(parseSRT(subtitlesResult.value.data));
+        } else {
+          console.error(`Failed to fetch subtitles for video ${id}:`, subtitlesResult.reason?.response?.data || subtitlesResult.reason?.message);
+        }
+      };
+
+      fetchMetadata();
+    }
+  }, [isActive, id]);
+
+  const parseSRT = (srtText) => {
+    if (!srtText || typeof srtText !== 'string') return [];
+    const subtitleBlocks = srtText.trim().replace(/\r/g, '').split('\n\n');
+    return subtitleBlocks.map(block => {
+      const lines = block.split('\n');
+      if (lines.length < 2) return null;
+      const timeString = lines[1];
+      const text = lines.slice(2).join(' ');
+      const timeParts = timeString.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+      if (!timeParts) return null;
+      const startTime = parseInt(timeParts[1]) * 3600 + parseInt(timeParts[2]) * 60 + parseInt(timeParts[3]) + parseInt(timeParts[4]) / 1000;
+      const endTime = parseInt(timeParts[5]) * 3600 + parseInt(timeParts[6]) * 60 + parseInt(timeParts[7]) + parseInt(timeParts[8]) / 1000;
+      return { startTime, endTime, text };
+    }).filter(Boolean);
+  };
+
+  const handleTogglePlay = () => {
+    setIsPaused(prev => !prev);
+    playPauseOpacity.value = withTiming(1, { duration: 200 }, () => {
+      playPauseOpacity.value = withTiming(0, { duration: 500 });
+    });
+  };
+
+  const handleLikePress = () => {
+    const currentlyLiked = isLiked;
+    setLikeCount(prev => prev + (currentlyLiked ? -1 : 1));
+    onLike(id);
+  };
+
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onStart(() => {
+      if (isLiked) {
+        dislikeHeartScale.value = withSpring(1, undefined, (isFinished) => {
+          if (isFinished) dislikeHeartScale.value = withDelay(300, withTiming(0));
+        });
+        dislikeHeartOpacity.value = withTiming(1, undefined, (isFinished) => {
+          if (isFinished) dislikeHeartOpacity.value = withDelay(300, withTiming(0));
+        });
+      } else {
+        likeHeartScale.value = withSpring(1, undefined, (isFinished) => {
+          if (isFinished) likeHeartScale.value = withDelay(300, withTiming(0));
+        });
+        likeHeartOpacity.value = withTiming(1, undefined, (isFinished) => {
+          if (isFinished) likeHeartOpacity.value = withDelay(300, withTiming(0));
+        });
+      }
+      runOnJS(handleLikePress)();
+    });
+
+  const handleVideoError = (e) => {
+    console.error('Video Error:', e);
+    setError('This video could not be played.');
+    setIsLoading(false);
+  };
+
+  const currentSubtitle = subtitles.find(sub => currentTime >= sub.startTime && currentTime <= sub.endTime)?.text || '';
+
+  const handleShare = useCallback(async () => {
+    if (!thumbnail) return Alert.alert('Error', 'Thumbnail is not available.');
+
+    const localThumbnailPath = `${RNFS.CachesDirectoryPath}/share_thumbnail_${Date.now()}.jpg`;
+
+    try {
+      await RNFS.downloadFile({ fromUrl: thumbnail, toFile: localThumbnailPath }).promise;
+      await Share.open({
+        title: 'Share User Video',
+        // FIX: Access firstName directly from props
+        message: `Check out this video from ${firstName} on Wezume!`,
+        url: `file://${localThumbnailPath}`,
+      });
+    } catch (error) {
+      if (error.code !== 'ECANCELLED') {
+        Alert.alert('Error', 'Could not share the video.');
+      }
+    }
+  }, [thumbnail, firstName]);
+
+  const handleCall = () => {
+    if (phoneNumber) {
+      const url = `tel:${phoneNumber}`;
+      Linking.canOpenURL(url).then(supported => {
+        if (supported) {
+          Linking.openURL(url);
+        } else {
+          Alert.alert('Error', 'Phone calls are not supported on this device.');
+        }
+      });
+    } else {
+      Alert.alert('Info', 'No phone number available for this user.');
+    }
+  };
+
+  const handleEmail = () => {
+    if (email) {
+      const url = `mailto:${email}`;
+      Linking.canOpenURL(url).then(supported => {
+        if (supported) {
+          Linking.openURL(url);
+        } else {
+          Alert.alert('Error', 'Email is not supported on this device.');
+        }
+      });
+    } else {
+      Alert.alert('Info', 'No email address available for this user.');
+    }
+  };
+
+  const canSeeContactInfo = loggedInUserRole === 'Employer' || loggedInUserRole === 'Investor';
+
+  const playPauseStyle = useAnimatedStyle(() => ({ opacity: playPauseOpacity.value }));
+  const animatedLikeHeartStyle = useAnimatedStyle(() => ({
+    opacity: likeHeartOpacity.value,
+    transform: [{ scale: likeHeartScale.value }],
+  }));
+  const animatedDislikeHeartStyle = useAnimatedStyle(() => ({
+    opacity: dislikeHeartOpacity.value,
+    transform: [{ scale: dislikeHeartScale.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={doubleTapGesture}>
+      <View style={styles.page}>
+        {isLoading && isActive && !error && <ActivityIndicator style={styles.loader} color="#fff" size="large" />}
+
+        {error && isActive && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {isActive && !error ? (
+          <Video
+            source={{ uri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+            paused={isPaused}
+            controls={false}
+            repeat={true}
+            onLoadStart={() => { setIsLoading(true); setError(null); }}
+            onLoad={() => setIsLoading(false)}
+            onProgress={(data) => setCurrentTime(data.currentTime)}
+            onError={handleVideoError}
+            poster={thumbnail}
+            posterResizeMode="cover"
+          />
+        ) : (
+          <Image source={{ uri: thumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        )}
+
+        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleTogglePlay} activeOpacity={1} />
+
+        <Animated.View style={[styles.playPauseOverlay, playPauseStyle]}>
+          <PlayIcon name={isPaused ? "play-circle" : "pause-circle"} size={80} color="rgba(255, 255, 255, 0.7)" />
+        </Animated.View>
+        <Animated.View style={[styles.heartAnimationContainer, animatedLikeHeartStyle]}>
+          <HeartIcon name="heart" size={100} color="white" />
+        </Animated.View>
+        <Animated.View style={[styles.heartAnimationContainer, animatedDislikeHeartStyle]}>
+          <BrokenHeartIcon name="heart-broken" size={100} color="white" />
+        </Animated.View>
+
+        <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.6)']} style={styles.overlay}>
+          <View style={styles.topControls}>
+            <AnimatedIconButton onPress={() => navigation.goBack()}>
+              <Ant name={'arrowleft'} size={24} color={'#fff'} />
+            </AnimatedIconButton>
+          </View>
+          <View style={styles.bottomControls}>
+            <View style={styles.leftColumn}>
+              {currentSubtitle ? (
+                <View style={styles.transcriptionContainer}>
+                  <Text style={styles.transcriptionText}>{currentSubtitle}</Text>
+                </View>
+              ) : null}
+              <View style={styles.userDetails}>
+                {profileImage && <Image source={{ uri: profileImage }} style={styles.profileImage} />}
+                <Text style={styles.userName}>{firstName}</Text>
+              </View>
+            </View>
+            <View style={styles.rightColumn}>
+              <AnimatedIconButton onPress={handleLikePress}>
+                <Like name={'heart'} size={30} color={isLiked ? '#FF005E' : '#fff'} />
+                <Text style={styles.iconText}>{likeCount}</Text>
+              </AnimatedIconButton>
+
+              {canSeeContactInfo && (
+                <>
+                  <AnimatedIconButton onPress={() => navigation.navigate('ScoringScreen', { videoId: id, userId: videoOwnerId })}>
+                    <Score name={'speedometer'} size={30} color={'#fff'} />
+                    <Text style={styles.iconText}>{totalScore}</Text>
+                  </AnimatedIconButton>
+                  <AnimatedIconButton onPress={handleCall}>
+                    <Phone name={'phone-volume'} size={22} color={'#fff'} />
+                  </AnimatedIconButton>
+                  <AnimatedIconButton onPress={handleEmail}>
+                    <Whatsapp name={'email'} size={27} color={'#fff'} />
+                  </AnimatedIconButton>
+                </>
+              )}
+
+              <AnimatedIconButton onPress={handleShare}>
+                <Shares name={'share'} size={30} color={'#fff'} />
+              </AnimatedIconButton>
+            </View>
+          </View>
+        </LinearGradient>
+      </View>
+    </GestureDetector>
+  );
+});
+
+const HomeSwipe = () => {
+  const route = useRoute();
+  const navigation = useNavigation();
+  const isFocused = useIsFocused();
+
+  const [videos] = useState(route.params?.allvideos || []);
+  const [user, setUser] = useState({ userId: null, firstName: '', jobOption: null });
+  const [activeVideoIndex, setActiveVideoIndex] = useState(route.params?.index || 0);
+  const [likedStatus, setLikedStatus] = useState({});
+
+  useEffect(() => {
+    const loadUserData = async () => {
+      const apiUserIdStr = await AsyncStorage.getItem('userId');
+      const apiFirstName = await AsyncStorage.getItem('firstName');
+      const jobOption = await AsyncStorage.getItem('jobOption');
+
+      if (apiUserIdStr) {
+        const parsedUserId = parseInt(apiUserIdStr, 10);
+        setUser({ userId: parsedUserId, firstName: apiFirstName, jobOption: jobOption });
+        fetchLikeStatus(parsedUserId);
       }
     };
-    fetchVideos(page, pageSize);
-  }, [userId, videoId, page, selectedIndex, selectedVideoUri]); // Ensure dependencies are correct
+    loadUserData();
+  }, []);
 
-  const handleLike = async () => {
-    const newLikedState = !isLiked[videoId];
-    setIsLiked(prevState => ({
-      ...prevState,
-      [videoId]: newLikedState,
-    }));
-
+  const fetchLikeStatus = async (userId) => {
     try {
-      if (newLikedState) {
-        const response = await axios.post(
-          `${env.baseURL}/api/videos/${videoId}/like`,
-          null,
-          {
-            params: {userId, firstName},
-          },
-        );
-        if (response.status === 200) {
-          setLikeCount(prevCount => prevCount + 1);
-          await saveLikeNotification(videoId, firstName);
-        }
-      }
+      const response = await apiClient.get(`/api/videos/likes/status?userId=${userId}`);
+      setLikedStatus(response.data);
     } catch (error) {
-      if (error.response && error.response.status === 400) {
-        alert('You have already liked this video.');
-      } else {
-        console.error('Error toggling like:', error);
-      }
-    }
-  };
-  const saveLikeNotification = async (videoId, firstName) => {
-    try {
-      const notifications =
-        JSON.parse(await AsyncStorage.getItem('likeNotifications')) || [];
-      notifications.push({videoId, firstName, timestamp: Date.now()});
-      await AsyncStorage.setItem(
-        'likeNotifications',
-        JSON.stringify(notifications),
-      );
-    } catch (error) {
-      console.error('Error saving notification:', error);
+      console.error('Error fetching like status:', error);
     }
   };
 
-  // Handle dislike action
-  const handleDislike = async () => {
-    const newLikedState = !isLiked[videoId];
-    setIsLiked(prevState => ({
-      ...prevState,
-      [videoId]: newLikedState,
-    }));
+  const handleLike = useCallback(async (videoId) => {
+    if (!user.userId) return;
 
-    try {
-      if (!newLikedState) {
-        await axios.post(`${env.baseURL}/api/videos/${videoId}/dislike`, null, {
-          params: {userId, firstName},
-        });
-        setLikeCount(prevCount => prevCount - 1);
-      }
-    } catch (error) {
-      console.error('Error toggling dislike:', error);
-    }
-  };
-  const fetchProfilePic = async userId => {
-    try {
-      const response = await axios.get(
-        `${env.baseURL}/users/user/${userId}/profilepic`,
-        {
-          responseType: 'arraybuffer',
-        },
-      );
-      if (response.data) {
-        const base64Image = `data:image/jpeg;base64,${Buffer.from(
-          response.data,
-          'binary',
-        ).toString('base64')}`;
-        setProfileImage(base64Image);
-      } else {
-        setProfileImage(null);
-      }
-    } catch (error) {
-      console.error('Error fetching profile pic:', error);
-      setProfileImage(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+    setLikedStatus(prevLikedStatus => {
+      const isCurrentlyLiked = !!prevLikedStatus[videoId];
+      const endpoint = isCurrentlyLiked ? 'dislike' : 'like';
 
-  const makeCall = item => {
-    if (item.phoneNumber) {
-      Linking.openURL(`tel:${item.phoneNumber}`).catch(err => {
-        console.error('Error making call:', err);
-        Alert.alert(
-          'Error',
-          'Call failed. Make sure the app has permission to make calls.',
-        );
+      apiClient.post(`/api/videos/${videoId}/${endpoint}`, null, {
+        params: { userId: user.userId, firstName: user.firstName },
+      }).catch(() => {
+        Alert.alert('Error', 'Could not update like status.');
+        setLikedStatus(currentStatus => ({ ...currentStatus, [videoId]: isCurrentlyLiked }));
       });
-    } else {
-      console.log('No phone number, fetching phone number...'); // Log that we're fetching the phone number
-    }
-  };
-  // Function to send a WhatsApp message
-  const sendEmail = item => {
-    if (item.email) {
-      const subject = 'Hello from Wezume'; // Customize your email subject
-      const body = `Hello, ${item.firstName}, it's nice to connect with you.`; // Customize your email body
-      const mailtoUrl = `mailto:${item.email}?subject=${encodeURIComponent(
-        subject,
-      )}&body=${encodeURIComponent(body)}`;
-      Linking.openURL(mailtoUrl).catch(err => {
-        console.error('Error sending email:', err);
-        Alert.alert(
-          'Error',
-          'Failed to open email client. Make sure an email client is installed and configured on your device.',
-        );
-      });
-    } else {
-      Alert.alert('Error', 'Email address is not available.');
-    }
-  };
 
-  const closeModal = () => {
-    navigation.goBack();
-  };
-  const shareOption = async () => {
-    try {
-      // Define the thumbnail URL
-      const thumbnailUrl =
-        'https://wezume.in/uploads/videos/shareThumbnail.jpg';
-      const localThumbnailPath = `${RNFS.CachesDirectoryPath}/thumbnail.jpg`;
+      return { ...prevLikedStatus, [videoId]: !isCurrentlyLiked };
+    });
+  }, [user.userId, user.firstName]);
 
-      // Check if the URL is valid
-      const response = await fetch(thumbnailUrl);
-      if (!response.ok) {
-        throw new Error(
-          `Thumbnail URL is not accessible: ${response.statusText}`,
-        );
-      }
-
-      // Download the thumbnail locally
-      const downloadResult = await RNFS.downloadFile({
-        fromUrl: thumbnailUrl,
-        toFile: localThumbnailPath,
-      }).promise;
-
-      if (downloadResult.statusCode === 200) {
-        const shareOptions = {
-          title: 'Share User Video',
-          message: `Check out this video shared by ${firstName}\n\n${env.baseURL}/users/share?target=app://api/videos/user/${currentVideo.uri}/${videoId}`,
-          url: `file://${localThumbnailPath}`, // Share the local thumbnail image
-        };
-
-        await Share.open(shareOptions);
-      } else {
-        console.error(
-          'Failed to download the thumbnail. Status code:',
-          downloadResult.statusCode,
-        );
-        Alert.alert('Error', 'Unable to download the thumbnail for sharing.');
-      }
-    } catch (error) {
-      console.error('Error sharing video:', error);
-      Alert.alert(
-        'Error',
-        'An error occurred while preparing the share option.',
-      );
-    }
-  };
-
-  const onViewableItemsChanged = useRef(({viewableItems}) => {
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
     if (viewableItems.length > 0) {
-      const video = viewableItems[0].item;
-      const videoId = video?.id;
-      if (!videoId) {
-        console.error('❌ Error: videoId is null or undefined');
-        return;
-      }
-
-      setIsVideoLoading(true); // Show loader when video changes
-      setCurrentVideo(video);
-      setSelectedVideoUri(video.uri);
-      setVideoId(videoId); // Set the videoId based on the current video
-
-      const fetchLikeCount = async () => {
-        try {
-          const response = await axios.get(
-            `${env.baseURL}/api/videos/${videoId}/like-count`,
-          );
-          setLikeCount(response.data); // Update like count for the focused video
-        } catch (error) {
-          console.error('Error fetching like count:', error);
-        }
-      };
-
-      fetchLikeCount(); // Fetch like count for the focused video
-
-      // Pause all videos except the focused one
-      if (videoRefs.current) {
-        videoRefs.current.forEach((ref, index) => {
-          if (ref && ref !== videoRefs.current[viewableItems[0].index]) {
-            ref.pause();
-          }
-        });
-      }
-
-      const activeSubtitle = subtitles.find(
-        subtitle =>
-          currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
-      );
-      setCurrentSubtitle(activeSubtitle ? activeSubtitle.text : '');
-
-      const parseTimeToSeconds = timeStr => {
-        const [hours, minutes, seconds] = timeStr.split(':');
-        const [sec, milli] = seconds.split(',');
-        return (
-          parseInt(hours, 10) * 3600 +
-          parseInt(minutes, 10) * 60 +
-          parseInt(sec, 10) +
-          parseInt(milli, 10) / 1000
-        );
-      };
-
-      const parseSRT = srtText => {
-        const lines = srtText.split('\n');
-        const parsedSubtitles = [];
-        let i = 0;
-
-        while (i < lines.length) {
-          if (lines[i].match(/^\d+$/)) {
-            const startEnd = lines[i + 1].split(' --> ');
-            const startTime = parseTimeToSeconds(startEnd[0]);
-            const endTime = parseTimeToSeconds(startEnd[1]);
-            let text = '';
-            i += 2;
-            while (i < lines.length && lines[i].trim() !== '') {
-              text += lines[i] + '\n';
-              i++;
-            }
-            parsedSubtitles.push({startTime, endTime, text: text.trim()});
-          } else {
-            i++;
-          }
-        }
-        return parsedSubtitles;
-      };
-
-      const fetchSubtitles = async () => {
-        try {
-          const subtitlesUrl = `${env.baseURL}/api/videos/user/${videoId}/subtitles.srt`;
-          const response = await fetch(subtitlesUrl);
-          const text = await response.text();
-          const parsedSubtitles = parseSRT(text);
-          setSubtitles(parsedSubtitles);
-        } catch (error) {
-          console.error('Error fetching subtitles:', error);
-        }
-      };
-
-      fetchSubtitles();
+      setActiveVideoIndex(viewableItems[0].index);
     }
   }).current;
 
+  const renderItem = useCallback(({ item, index }) => (
+    <VideoPlayer
+      item={item}
+      isActive={isFocused && index === activeVideoIndex}
+      onLike={handleLike}
+      isLiked={!!likedStatus[item.id]}
+      loggedInUserRole={user.jobOption}
+    />
+  ), [isFocused, activeVideoIndex, handleLike, likedStatus, user.jobOption]);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      navigation.goBack();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [navigation]);
+
   return (
     <View style={styles.container}>
-      <View style={styles.modalContainer}>
-        <FlatList
-          data={videourl}
-          keyExtractor={item => item.id.toString()}
-          pagingEnabled
-          showsVerticalScrollIndicator={false}
-          snapToAlignment="start"
-          decelerationRate="fast"
-          snapToInterval={windowHeight}
-          scrollEnabled
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={{itemVisiblePercentThreshold: 80}} // Trigger when 80% visible
-          getItemLayout={(data, index) => ({
-            length: windowHeight,
-            offset: windowHeight * index,
-            index,
-          })}
-          initialScrollIndex={
-            parseInt(selectedIndex, 10) >= 0 &&
-            parseInt(selectedIndex, 10) < videourl.length
-              ? parseInt(selectedIndex, 10)
-              : 0
-          } // Ensure index is within bounds
-          initialNumToRender={1} // Load one video at a time
-          maxToRenderPerBatch={1} // Render one video at a time
-          windowSize={1} // Render only one video at a time
-          renderItem={({item, index}) => (
-            <View style={[styles.modalContent, {height: windowHeight}]}>
-              <View style={styles.userDetails}>
-                {item.profileImage && (
-                  <Image
-                    source={{uri: item.profileImage}}
-                    style={styles.profileImage}
-                  />
-                )}
-                <Text style={styles.userName}>{item.firstName}</Text>
-              </View>
-
-              {/* Video Player */}
-              <View style={styles.fullScreen}>
-                {isVideoLoading && (
-                  <ActivityIndicator
-                    size="large"
-                    color="#ffffff"
-                    style={styles.loader}
-                  />
-                )}
-                <Video
-                  ref={ref => (videoRefs.current[index] = ref)} // Store reference to video player
-                  source={{uri: item.uri}}
-                  style={styles.fullScreenVideo}
-                  controls={true}
-                  automaticallyWaitsToMinimizeStalling={false}
-                  resizeMode="cover"
-                  paused={currentVideo?.id !== item.id}
-                  onLoadStart={() => setIsVideoLoading(true)} // Show loader when video starts loading
-                  onLoad={() => setIsVideoLoading(false)} // Hide loader when video is loaded
-                  onError={error =>
-                    console.error('Video playback error:', error)
-                  }
-                  onProgress={({currentTime}) => {
-                    setCurrentTime(currentTime);
-                    const activeSubtitle = subtitles.find(
-                      subtitle =>
-                        currentTime >= subtitle.startTime &&
-                        currentTime <= subtitle.endTime,
-                    );
-                    setCurrentSubtitle(
-                      activeSubtitle ? activeSubtitle.text : '',
-                    );
-                  }}
-                  onEndReachedThreshold={0.1} // Load more videos when 10% of the list is scrolled
-                  ListFooterComponent={
-                    loading && <Text>Loading more videos...</Text>
-                  }
-                />
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('Trending')}
-                  style={styles.trending1}>
-                  <Text style={{color: '#ffffff', fontWeight: '600'}}>
-                    #Trending
-                  </Text>
-                </TouchableOpacity>
-                <Text style={styles.line}>|</Text>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('LikeScreen')}
-                  style={styles.trending}>
-                  <Text style={{color: '#ffffff', fontWeight: '600'}}>
-                    Liked Video
-                  </Text>
-                </TouchableOpacity>
-                <View style={styles.buttoncls}>
-                  <TouchableOpacity
-                    onPress={closeModal}
-                    style={styles.buttoncls}>
-                    <Ant name={'leftcircle'} size={24} color={'#ccc'} />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.buttonheart}>
-                  <TouchableOpacity
-                    onPress={() =>
-                      isLiked[videoId] ? handleDislike() : handleLike()
-                    }>
-                    <Like
-                      name={'heart'}
-                      size={30}
-                      style={[
-                        {color: isLiked[videoId] ? 'red' : '#ffffff'}, // Dynamically change color
-                      ]}
-                    />
-                    <Text style={styles.count}>{likeCount}</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.buttonshare}>
-                  <TouchableOpacity onPress={shareOption}>
-                    <Shares name={'share'} size={30} color={'#ffffff'} />
-                  </TouchableOpacity>
-                </View>
-                {(jobOption === 'Employer' || jobOption === 'Investor') && (
-                  <>
-                    <View style={styles.buttonmsg}>
-                      <TouchableOpacity onPress={() => sendEmail(item)}>
-                        <Whatsapp name={'email'} size={27} color={'#ffffff'} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.buttonphone}>
-                      <TouchableOpacity onPress={() => makeCall(item)}>
-                        <Phone
-                          name={'phone-volume'}
-                          size={22}
-                          color={'#ffffff'}
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                )}
-                <View style={styles.subtitle}>
-                  <Text
-                    style={{
-                      color: '#ffffff',
-                      fontSize: 12,
-                      textAlign: 'center',
-                      fontWeight: 800,
-                      bottom: -30,
-                      left: 20,
-                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                    }}>
-                    {currentSubtitle}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
-        />
-      </View>
+      <FlatList
+        data={videos}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id.toString()}
+        pagingEnabled
+        showsVerticalScrollIndicator={false}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        initialScrollIndex={route.params?.index || 0}
+        getItemLayout={(data, index) => ({
+          length: windowHeight,
+          offset: windowHeight * index,
+          index,
+        })}
+      />
     </View>
   );
 };
 
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  container: { flex: 1, backgroundColor: '#000' },
+  page: { width: '100%', height: windowHeight, justifyContent: 'center', alignItems: 'center' },
+  loader: { position: 'absolute' },
+  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, padding: 15, justifyContent: 'space-between' },
+  topControls: { flexDirection: 'row', justifyContent: 'flex-start', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 50 },
+  bottomControls: { flexDirection: 'row', alignItems: 'flex-end' },
+  leftColumn: { flex: 1, justifyContent: 'flex-end', paddingRight: 20 },
+  rightColumn: { justifyContent: 'space-around', alignItems: 'center', paddingVertical: 20, marginBottom: '30%' },
+  userDetails: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  profileImage: { width: 45, height: 45, borderRadius: 25, borderWidth: 2, borderColor: '#fff' },
+  userName: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginLeft: 10 },
+  iconButton: { alignItems: 'center', paddingVertical: 10 },
+  iconText: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 4 },
+  errorContainer: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  videoItem: {
-    flex: 1,
-  },
-  columnWrapper: {
-    justifyContent: 'flex-start',
-    aspectRatio: 2.27,
-  },
-  videoPlayer: {
-    height: '99%',
-    width: '100%',
-  },
-  imageBackground: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  emptyListText: {
+  errorText: {
+    color: 'white',
+    fontSize: 16,
     textAlign: 'center',
-    fontSize: 18,
-    color: 'gray',
+    padding: 20,
   },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-  },
-  modalContent: {
-    width: 'auto',
-    height: '50%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fullScreenVideo: {
-    width: '100%',
-    height: '94%',
-  },
-  fullScreen: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  userDetails: {
-    position: 'absolute',
-    top: '85%',
-    left: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    zIndex: 1, // Ensure it appears above the video
-  },
-  profileImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: '#fff',
-    elevation: 10,
-  },
-  userName: {
-    marginLeft: 10,
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    elevation: 10,
-  },
-  buttoncls: {
-    color: '#ffffff',
-    position: 'absolute',
-    top: 35,
-    right: '89%',
-    fontSize: 24,
-    fontWeight: '900',
-  },
-  buttonheart: {
-    position: 'absolute',
-    top: '60%',
-    right: 32,
-    color: '#ffffff',
-    fontSize: 30,
-    zIndex: 10,
-    elevation: 10,
-    padding: 10,
-  },
-  buttonshare: {
-    position: 'absolute',
-    top: '67%',
-    right: 27,
-    color: '#ffffff',
-    fontSize: 30,
-    zIndex: 10,
-    elevation: 10,
-    padding: 10,
-  },
-  buttonphone: {
-    position: 'absolute',
-    top: '73%',
-    right: 30,
-    color: '#ffffff',
-    fontSize: 22,
-    zIndex: 10,
-    padding: 10,
-    elevation: 10,
-  },
-  buttonmsg: {
-    position: 'absolute',
-    top: '78%',
-    right: 30,
-    color: '#ffffff',
-    fontSize: 30,
-    zIndex: 10,
-    elevation: 10,
-    padding: 10,
-  },
-  count: {
-    position: 'absolute',
-    right: 7,
-    color: '#ffffff',
-    top: '89%',
-    fontWeight: '900',
-    zIndex: 10,
-    elevation: 10,
-  },
-  trending1: {
-    position: 'absolute',
-    right: '45%',
-    padding: 28,
-    top: 30,
-    fontWeight: '900',
-  },
-  trending: {
-    position: 'absolute',
-    right: '23%',
-    padding: 28,
-    top: 30,
-    fontWeight: '900',
-  },
-  line: {
-    position: 'absolute',
-    right: '43%',
-    padding: 28,
-    top: 30,
-    fontWeight: '900',
-    color: '#ffffff',
-  },
-  subtitle: {
-    position: 'absolute',
-    right: 80,
-    width: 300,
-    padding: 10,
-    bottom: '20%',
-  },
-  loader: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{translateX: -25}, {translateY: -25}],
-    zIndex: 10,
-  },
+  transcriptionContainer: { backgroundColor: 'rgba(0, 0, 0, 0.5)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginTop: 10, alignSelf: 'center', marginBottom: '10%' },
+  transcriptionText: { color: '#fff', fontSize: 16, fontWeight: '500' },
+  playPauseOverlay: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
+  heartAnimationContainer: { position: 'absolute', justifyContent: 'center', alignItems: 'center' },
 });
 
-export default FilterSwipe;
+export default HomeSwipe;

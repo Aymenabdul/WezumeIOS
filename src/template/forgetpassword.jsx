@@ -7,12 +7,23 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  Dimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import FastImage from 'react-native-fast-image';
 import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
 import env from './env';
+import { BlurView } from '@react-native-community/blur';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  interpolate,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector,GestureHandlerRootView } from 'react-native-gesture-handler';
+// Other imports remain the same
+const { width, height } = Dimensions.get('window');
 
 const ForgetPassword = () => {
   const navigation = useNavigation();
@@ -20,6 +31,41 @@ const ForgetPassword = () => {
   const [newPassword, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const rotateX = useSharedValue(0);
+  const rotateY = useSharedValue(0);
+      // Gesture handler for the tilt effect
+      const panGesture = Gesture.Pan()
+        .onUpdate((event) => {
+          rotateY.value = interpolate(
+            event.translationX,
+            [-width / 2, width / 2],
+            [-10, 10] // Tilt range in degrees
+          );
+          rotateX.value = interpolate(
+            event.translationY,
+            [-height / 2, height / 2],
+            [10, -10] // Tilt range in degrees
+          );
+        })
+        .onEnd(() => {
+          // Reset rotation smoothly when gesture ends
+          rotateX.value = withTiming(0, { duration: 500 });
+          rotateY.value = withTiming(0, { duration: 500 });
+        });
+    
+      // Animated style for the container
+      const animatedStyle = useAnimatedStyle(() => {
+        const rotateXvalue = `${rotateX.value}deg`;
+        const rotateYvalue = `${rotateY.value}deg`;
+        return {
+          transform: [
+            { perspective: 300 },
+            { rotateX: rotateXvalue },
+            { rotateY: rotateYvalue },
+          ],
+        };
+      });
 
   const handleReset = async () => {
     console.log('handleReset started');
@@ -82,9 +128,15 @@ const ForgetPassword = () => {
       style={styles.container}
       source={require('./assets/login.jpg')}
       resizeMode={FastImage.resizeMode.cover}>
-      <LinearGradient
-        colors={['#d3e4f6', '#a1d1ff']}
-        style={styles.modeContainer}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+           <GestureDetector gesture={panGesture}>
+             <Animated.View style={[styles.glassContainer, animatedStyle]}>
+               <BlurView
+                 style={styles.absolute}
+                 blurType="xlight" // Can be 'light', 'dark', 'xlight', etc.
+                 blurAmount={8} // Adjust blur intensity
+                 reducedTransparencyFallbackColor="white"
+               />
         <Image style={styles.img2} source={require('./assets/logopng.png')} />
         <Text style={styles.title}>Reset Password</Text>
         <View style={styles.input}>
@@ -125,7 +177,10 @@ const ForgetPassword = () => {
             </Text>
           </TouchableOpacity>
         </LinearGradient>
-      </LinearGradient>
+      </Animated.View>
+      </GestureDetector>
+      </GestureHandlerRootView>
+
     </FastImage>
   );
 };
@@ -133,59 +188,74 @@ const ForgetPassword = () => {
 export default ForgetPassword;
 
 const styles = StyleSheet.create({
+  // This is the main screen container, likely behind an ImageBackground
   container: {
     flex: 1,
-    backgroundColor: '#fff',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  modeContainer: {
+  // This is your main glass container
+  glassContainer: {
+    marginTop:'50%',
+    alignSelf: 'center',
     width: '90%',
-    alignItems: 'center',
-    padding: '5%',
-    borderRadius: 10,
+    padding: 25,
+    borderRadius: 20, // More rounded for a modern look
+    overflow: 'hidden', // Crucial for containing the blur effect
+    borderColor: 'rgba(255, 255, 255, 0.4)', // Semi-transparent border
+    borderWidth: 1.5,
   },
+  // This style must be applied to the <BlurView> component itself
+  absolute: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    right: 0,
+  },
+  // Glassy input field style
   input: {
     width: '100%',
-    marginVertical: 10,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: 'rgba(255, 255, 255, 0.6)', // Semi-transparent background
+    borderWidth:0.3,
+    borderColor:'#0387e0',
+    padding: 14,
+    marginBottom: 15,
+    borderRadius: 12, // Consistent rounded corners
+    color: '#333', // Darker text for readability
+    fontSize: 16,
+    fontWeight: '500',
   },
-  textInput: {
-    height: 40,
-  },
+  // Your existing button styles, slightly adjusted for consistency
   btn: {
-    width: 150,
-    borderRadius: 10,
-    elevation: 5,
-    marginTop: 10,
-    alignItems: 'center',
+    width: '70%',
+    alignSelf: 'center',
+    borderRadius: 12, // Consistent rounded corners
+    elevation: 8,
+    marginTop: 20,
   },
   signupButton: {
-    height: 40,
+    paddingVertical: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 7,
   },
   signupButtonText: {
-    fontWeight: '500',
+    fontWeight: 'bold',
     color: '#ffffff',
-    fontSize: 20,
-    textAlign:'center',
+    fontSize: 18,
   },
+  // Your existing content styles, adjusted for the new layout
   img2: {
-    width: 200,
-    height: 100,
-    marginHorizontal: 65,
+    width: 180,
+    height: 90,
+    alignSelf: 'center',
+    marginBottom: 10,
   },
   title: {
-    fontSize: 20,
-    marginBottom: 8,
+    fontSize: 26,
+    fontWeight: '700',
     textAlign: 'center',
-    color: '#4e4b51',
-    fontWeight: '600',
+    color: '#333',
+    marginBottom:'5%',
+    marginTop:'-10%'
   },
 });

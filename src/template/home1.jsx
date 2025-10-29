@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -8,270 +8,243 @@ import {
   ImageBackground,
   Alert,
   BackHandler,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
-import Header from './header';
-import axios from 'axios';
-import { Buffer } from 'buffer';
+import Header from './header'; // Assuming Header component exists
 import Video from 'react-native-video';
-import Delete from 'react-native-vector-icons/MaterialCommunityIcons';
-import Shares from 'react-native-vector-icons/Ionicons';
+import DeleteIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import ShareIcon from 'react-native-vector-icons/Ionicons';
+import UploadIcon from 'react-native-vector-icons/Feather';
+import PlayIcon from 'react-native-vector-icons/Ionicons';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
-import notifee, { EventType } from '@notifee/react-native';
-import env from './env';
 
-notifee.onBackgroundEvent(async ({ type, detail }) => {
-  console.log('Background notification event:', type, detail);
+// NOTE: Replace './api' with your actual API client setup if necessary.
+import apiClient from './api'; 
 
-  if (type === EventType.PRESS) {
-    console.log('User pressed the notification:', detail.notification);
-    // Handle what happens when the notification is tapped (e.g., navigate to a screen)
-  }
-});
+// --- Mock Environment Variables (Crucial for the share link) ---
+const env = {
+  // You MUST replace 'https://yourapi.com' with your app's actual base URL
+  baseURL: 'https://yourapi.com', 
+};
 
-const Home1 = () => {
+// --- API Service Functions ---
+const apiService = {
+  fetchVideo: (userId) => apiClient.get(`/api/videos/user/${userId}`),
+  fetchSubtitles: (videoId) => apiClient.get(`/api/videos/user/${videoId}/subtitles.srt`),
+  deleteVideo: (userId) => apiClient.delete(`/api/videos/delete/${userId}`),
+  analyzeAudio: (videoId, audioUrl) => apiClient.get(`/api/audio/analyze`, { params: { videoId, filePath: audioUrl } }),
+  checkProfanity: (videoUrl) => apiClient.post(`/api/videos/check-profane`, { file: videoUrl }),
+  getFacialScore: (videoId, videoUrl) => apiClient.get(`/api/facial-score`, { params: { videoId, url: videoUrl } }),
+};
+
+// --- Sub-components (Kept outside to keep Home1 clean) ---
+
+const VideoPlayer = ({ videoUri, subtitles }) => {
   const videoRef = useRef(null);
-  const navigation = useNavigation();
-  const isFocused = useIsFocused();
-  const [thumbnail, setThumbnail] = useState();
-  const [firstName, setFirstName] = useState();
-  const [industry, setIndustry] = useState();
-  const [userId, setUserId] = useState();
-  const [videoUri, setVideoUri] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [profileImage, setProfileImage] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [hasVideo, setHasVideo] = useState(false); // Track if video is uploaded
+  const [isPaused, setIsPaused] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
-  const [audioUri, setAudioUri] = useState(null); // Track audio URI
-  const [subtitles, setSubtitles] = useState([]);
-  const [currentSubtitle, setCurrentSubtitle] = useState('');
-  const [videoId, setVideoId] = useState();
-  const [isVideoVisible, setIsVideoVisible] = useState(true);
-  const [isDisabled, setIsDisabled] = useState(false);
-  const [videoFetched, setVideoFetched] = useState(false); // Add state to track if video is fetched
-  const [analysisDone, setAnalysisDone] = useState(false);
-  const subtitlesUrl = `${env.baseURL}/api/videos/${userId}/subtitles.srt`;
 
-  useEffect(() => {
-  const sendHeartbeat = () => {
-    axios.post(`${env.baseURL}/api/heartbeat`, { userId })
-      .then(() => console.log('Heartbeat sent'))
-      .catch(err => console.error('Heartbeat failed', err));
-  };
-
-  sendHeartbeat(); // send one immediately on mount
-
-  const interval = setInterval(sendHeartbeat, 60 * 1000); // every 5 mins
-
-  return () => clearInterval(interval); // cleanup on unmount
-}, [userId]); // include userId as dependency
-
-
-  const parseTimeToSeconds = timeStr => {
-    const [hours, minutes, seconds] = timeStr.split(':');
-    const [sec, milli] = seconds.split(',');
-    return (
-      parseInt(hours, 10) * 3600 +
-      parseInt(minutes, 10) * 60 +
-      parseInt(sec, 10) +
-      parseInt(milli, 10) / 1000
-    );
-  };
-  // Function to check which subtitle is currently active based on video time
-  useEffect(() => {
-    const activeSubtitle = subtitles.find(
-      subtitle =>
-        currentTime >= subtitle.startTime && currentTime <= subtitle.endTime,
-    );
-    setCurrentSubtitle(activeSubtitle ? activeSubtitle.text : '');
+  const currentSubtitle = useMemo(() => {
+    return subtitles.find(sub => currentTime >= sub.startTime && currentTime <= sub.endTime)?.text || '';
   }, [currentTime, subtitles]);
 
-  useEffect(() => {
-    if (isFocused) {
-      const backAction = () => {
-        // Optional: Show a confirmation alert before exiting the app
-        Alert.alert('Exit App', 'Do you want to exit the app?', [
-          {
-            text: 'Cancel',
-            onPress: () => null,
-            style: 'cancel',
-          },
-          { text: 'Yes', onPress: () => BackHandler.exitApp() },
-        ]);
+  return (
+    <TouchableOpacity style={styles.videoCard} activeOpacity={1} onPress={() => setIsPaused(!isPaused)}>
+      <Video
+        ref={videoRef}
+        source={{ uri: videoUri }}
+        style={styles.videoPlayer}
+        resizeMode="contain"
+        controls={false}
+        onProgress={(e) => setCurrentTime(e.currentTime)}
+        repeat={true}
+        paused={isPaused}
+        preferredForwardBufferDuration={2}
+      />
+      {isPaused && (
+        <View style={styles.playPauseOverlay}>
+          <PlayIcon name="play-circle" size={80} color="rgba(255, 255, 255, 0.7)" />
+        </View>
+      )}
+      {currentSubtitle ? (
+        <Text style={styles.subtitle}>{currentSubtitle}</Text>
+      ) : null}
+    </TouchableOpacity>
+  );
+};
 
-        // Returning true indicates that we have handled the back press
-        return true;
-      };
+const ActionButtons = ({ onShare, onDelete, isDisabled }) => (
+  <View style={styles.buttonContainer}>
+    <TouchableOpacity style={styles.actionButton} onPress={onShare} disabled={isDisabled}>
+      <ShareIcon name="share-social-outline" size={22} color="#fff" />
+      <Text style={styles.actionButtonText}>Share</Text>
+    </TouchableOpacity>
+    <TouchableOpacity
+      style={styles.actionButton}
+      onPress={onDelete}
+      disabled={isDisabled}>
+      <DeleteIcon name="delete-outline" size={22} color="#fff" />
+      <Text style={styles.actionButtonText}>Delete</Text>
+    </TouchableOpacity>
+  </View>
+);
 
-      // Add event listener for back press
-      BackHandler.addEventListener('hardwareBackPress', backAction);
+const NoVideoContent = ({ onUploadPress }) => (
+  <View style={styles.noVideoContainer}>
+    <View style={styles.noVideoCard}>
+      <Text style={styles.noVideoTitle}>Upload Your Profile Video</Text>
+      <Text style={styles.noVideoInstructions}>
+        • Hold your phone in portrait mode.
+        {'\n'}• Ensure your video is at least 30 seconds.
+        {'\n'}• Review your transcription before uploading.
+      </Text>
+      <TouchableOpacity style={styles.uploadButton} onPress={onUploadPress}>
+        <UploadIcon name="upload-cloud" size={22} color="#fff" />
+        <Text style={styles.uploadButtonText}>Upload Video</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+);
 
-      // Cleanup the event listener on component unmount
-      return () => {
-        BackHandler.removeEventListener('hardwareBackPress', backAction);
-      };
-    }
-  }, [isFocused]);
+// ===============================================
+//          CORE COMPONENT: HOME1
+// ===============================================
 
-  useEffect(() => {
-    if (isFocused) {
-      const parseSRT = srtText => {
-        const lines = srtText.split('\n');
-        const parsedSubtitles = [];
-        let i = 0;
+const Home1 = () => {
+  const navigation = useNavigation();
+  const isFocused = useIsFocused();
 
-        while (i < lines.length) {
-          if (lines[i].match(/\d+/)) {
-            const startEnd = lines[i + 1].split(' --> ');
-            const startTime = parseTimeToSeconds(startEnd[0]);
-            const endTime = parseTimeToSeconds(startEnd[1]);
-            const text = lines[i + 2];
-            parsedSubtitles.push({ startTime, endTime, text });
-            i += 4;
-          } else {
-            i++;
-          }
-        }
+  // --- State and Data ---
+  const [state, setState] = useState({
+    loading: true,
+    hasVideo: false,
+    videoUri: null,
+    audioUri: null,
+    videoId: null,
+    thumbnail: null,
+    profileImage: null,
+    userData: null,
+    subtitles: [],
+  });
 
-        return parsedSubtitles;
-      };
+  const { loading, hasVideo, videoUri, audioUri, videoId, thumbnail, profileImage, userData, subtitles } = state;
+  const userId = userData?.userId;
+  const firstName = userData?.firstName;
+  const analysisTriggered = useRef(false);
 
-      const fetchSubtitles = async () => {
-        try {
-          const response = await fetch(subtitlesUrl);
-          const text = await response.text();
-          const parsedSubtitles = parseSRT(text);
-          setSubtitles(parsedSubtitles);
-        } catch (error) {
-          console.error('Error fetching subtitles:', error);
-        }
-      };
+  // --- Utility Functions/Callbacks ---
 
-      fetchSubtitles();
-    }
-  }, [isFocused, subtitlesUrl, userId]);
-
-  // Fetch profile image
-  const fetchProfilePic = async userId => {
-    setLoading(true);
-    try {
-      const response = await axios.get(
-        `${env.baseURL}/users/user/${userId}/profilepic`,
-        {
-          responseType: 'arraybuffer',
-        },
-      );
-
-      if (response.data) {
-        const base64Image = `data:image/jpeg;base64,${Buffer.from(
-          response.data,
-          'binary',
-        ).toString('base64')}`;
-        setProfileImage(base64Image);
-      } else {
-        console.error('Profile picture not found in response');
-        setProfileImage(null);
-      }
-    } catch (error) {
-      console.error('Error fetching profile pic:', error);
-      setProfileImage(null);
-    } finally {
-      setLoading(false);
-    }
+  const parseSRT = (srtText) => {
+    if (!srtText || typeof srtText !== 'string') return [];
+    const subtitleBlocks = srtText.trim().replace(/\r/g, '').split('\n\n');
+    return subtitleBlocks.map(block => {
+      const lines = block.split('\n');
+      if (lines.length < 2) return null;
+      const timeString = lines[1];
+      const text = lines.slice(2).join(' ');
+      const timeParts = timeString.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+      if (!timeParts) return null;
+      const startTime = parseInt(timeParts[1]) * 3600 + parseInt(timeParts[2]) * 60 + parseInt(timeParts[3]) + parseInt(timeParts[4]) / 1000;
+      const endTime = parseInt(timeParts[5]) * 3600 + parseInt(timeParts[6]) * 60 + parseInt(timeParts[7]) + parseInt(timeParts[8]) / 1000;
+      return { startTime, endTime, text };
+    }).filter(Boolean);
   };
 
-  const pauseVideo = useCallback(() => {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      console.log('⏸️ Video paused');
-    }
-  }, [videoRef]);
-
-  const deleteVideo = useCallback(
-    async id => {
-      Alert.alert(
-        'Delete Video',
-        'Are you sure you want to delete this video?',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-            onPress: () => console.log('Delete cancelled'),
-          },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                const response = await fetch(
-                  `${env.baseURL}/api/videos/delete/${id}`,
-                  {
-                    method: 'DELETE',
-                  },
-                );
-
-                if (!response.ok) {
-                  throw new Error('Failed to delete video');
-                }
-
-                await AsyncStorage.removeItem(`videoUri_${id}`);
-                await AsyncStorage.removeItem('videoId'); // Remove videoId from AsyncStorage
-                console.log(
-                  `🗑️ Removed cached video URI and videoId for user: ${id}`,
-                );
-
-                const cachePath = `${RNFS.CachesDirectoryPath}/video_${id}.mp4`;
-
-                const fileExists = await RNFS.exists(cachePath);
-                if (fileExists) {
-                  await RNFS.unlink(cachePath);
-                  console.log(`🗑️ Deleted cached video file: ${cachePath}`);
-                }
-
-                setHasVideo(false);
-                setVideoUri(null);
-
-                pauseVideo(); // Pause the video before navigating
-
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'home1' }], // Replace with your actual screen name
-                });
-
-                // Reload the page
-                navigation.navigate('home1');
-              } catch (error) {
-                console.error('❌ Error deleting video:', error);
-              } finally {
-                pauseVideo(); // Pause the video when it's not focused
-              }
-            },
-          },
-        ],
-        { cancelable: false },
-      );
-    },
-    [navigation, pauseVideo],
-  );
-
-  const shareOption = async () => {
+  const fetchVideoAndSubtitles = useCallback(async (currentUserId) => {
     try {
-      // Define the thumbnail URL
-      const thumbnailUrl = thumbnail;
-      const localThumbnailPath = `${RNFS.CachesDirectoryPath}/thumbnail.jpg`;
+      const { data: videoData } = await apiService.fetchVideo(currentUserId);
+      setState(s => ({
+        ...s,
+        videoUri: videoData.videoUrl,
+        audioUri: videoData.audiourl,
+        videoId: videoData.id,
+        thumbnail: videoData.tumbnail,
+        hasVideo: true,
+      }));
+      await AsyncStorage.setItem('cachedVideoData', JSON.stringify(videoData));
 
-      // Check if the URL is valid
-      const response = await fetch(thumbnailUrl);
-      if (!response.ok) {
-        throw new Error(
-          `Thumbnail URL is not accessible: ${response.statusText}`,
-        );
+      try {
+        const { data: subtitlesData } = await apiService.fetchSubtitles(videoData.id);
+        const parsedSubtitles = parseSRT(subtitlesData);
+        setState(s => ({ ...s, subtitles: parsedSubtitles }));
+      } catch (subError) {
+        setState(s => ({ ...s, subtitles: [] }));
       }
 
-      // Download the thumbnail locally
+    } catch (error) {
+      if (error.response?.status === 404) {
+        setState(s => ({ ...s, hasVideo: false, videoUri: null, videoId: null, subtitles: [] }));
+        await AsyncStorage.removeItem('cachedVideoData');
+      } else {
+        console.error('Error fetching video:', error);
+      }
+    }
+  }, []);
+
+  const performDelete = useCallback(async () => {
+    if (!userId) return;
+    try {
+      await apiService.deleteVideo(userId);
+      await AsyncStorage.multiRemove(['videoId', 'cachedVideoData']);
+      setState(s => ({ ...s, hasVideo: false, videoUri: null, videoId: null, subtitles: [] }));
+      // Optional: reset navigation stack after deletion
+      // navigation.reset({ index: 0, routes: [{ name: 'Home1' }] });
+    } catch (error) {
+      console.error('Error deleting video:', error);
+      Alert.alert('Error', 'Could not delete the video.');
+    }
+  }, [userId, navigation]);
+
+  const handleProfanityDetected = useCallback(() => {
+    Alert.alert("Profanity Detected", "This video must be deleted.",
+      [{ text: 'Delete Video', onPress: performDelete, style: 'destructive' }],
+      { cancelable: false }
+    );
+  }, [performDelete]);
+
+  const runAnalysis = useCallback(async () => {
+    if (!videoId || !videoUri || !audioUri) return;
+    try {
+      await Promise.allSettled([
+        apiService.checkProfanity(videoUri),
+        apiService.getFacialScore(videoId, videoUri),
+        apiService.analyzeAudio(videoId, audioUri),
+      ]);
+    } catch (error) {
+      if (error.response?.status === 403) {
+        handleProfanityDetected();
+      } else {
+        console.error('ANALYSIS Error:', error.message);
+      }
+    }
+  }, [videoId, videoUri, audioUri, handleProfanityDetected]);
+
+  // --- Action Handlers (Defined here to fix ReferenceError) ---
+  
+  const handleDeletePress = useCallback(() => {
+    Alert.alert('Delete Video', 'Are you sure?',
+      [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: performDelete }]
+    );
+  }, [performDelete]);
+
+  /**
+   * Fixes the original ReferenceError by ensuring it's defined before JSX,
+   * using useCallback, and having necessary dependencies.
+   */
+  const handleShare = useCallback(async () => {
+    if (!thumbnail || !firstName || !videoUri || !videoId) {
+        Alert.alert('Error', 'Cannot share video at this time. Missing data.');
+        return;
+    }
+    
+    try {
+      const thumbnailUrl = thumbnail;
+      const localThumbnailPath = `${RNFS.CachesDirectoryPath}/thumbnail.jpg`;
+      
       const downloadResult = await RNFS.downloadFile({
         fromUrl: thumbnailUrl,
         toFile: localThumbnailPath,
@@ -280,302 +253,121 @@ const Home1 = () => {
       if (downloadResult.statusCode === 200) {
         const shareOptions = {
           title: 'Share User Video',
+          // Ensure env.baseURL is defined for a functional link
           message: `Check out this video shared by ${firstName}\n\n${env.baseURL}/users/share?target=app://api/videos/user/${videoUri}/${videoId}`,
-          url: `file://${localThumbnailPath}`, // Share the local thumbnail image
+          url: `file://${localThumbnailPath}`,
         };
 
         await Share.open(shareOptions);
       } else {
-        console.error(
-          'Failed to download the thumbnail. Status code:',
-          downloadResult.statusCode,
-        );
+        console.error('Failed to download the thumbnail. Status code:', downloadResult.statusCode);
         Alert.alert('Error', 'Unable to download the thumbnail for sharing.');
       }
     } catch (error) {
       console.error('Error sharing video:', error);
-      // Alert.alert(
-      //   'Error',
-      //   'An error occurred while preparing the share option.',
-      // );
+      Alert.alert('Error', 'Error occurred during sharing.');
     }
-  };
+  }, [thumbnail, firstName, videoUri, videoId]);
 
-  //Reactions full code................................................................................................................
-
-  const ensureNotificationChannel = async () => {
-    const channelId = 'owner-channel';
-    await notifee.createChannel({
-      id: channelId,
-      name: 'Owner Notifications',
-      importance: 4, // Ensure high importance for popup notifications
-      vibration: true, // Enable vibration
-    });
-    return channelId;
-  };
+  // --- Effects ---
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        const channelId = await ensureNotificationChannel(); // Ensure the channel exists
-        const response = await axios.get(`${env.baseURL}/api/notifications`, {
-          params: { userId },
-        });
+    const loadData = async () => {
+      setState(s => ({...s, loading: true}));
+      const [
+        firstName, userId, roleCode, college, profileUrl
+      ] = await AsyncStorage.multiGet(['firstName', 'userId', 'roleCode', 'college', 'profileUrl']);
+      
+      const storedUserData = {
+        firstName: firstName[1],
+        userId: userId[1],
+        roleCode: roleCode[1],
+        college: college[1],
+      };
 
-        const notifications = response.data;
-        if (notifications.length > 0) {
-          // Show notification
-          for (const notification of notifications) {
-            await notifee.displayNotification({
-              title: 'Wezume',
-              body: `${notification.likerName} liked your video.`,
-              android: {
-                channelId, // Use the ensured channel
-                smallIcon: 'ic_launcher', // Ensure this icon exists in your project
-              },
-            });
-          }
-
-          // Mark notifications as read
-          await axios.post(
-            `${env.baseURL}/api/notifications/mark-as-read`,
-            notifications.map(n => n.id),
-          );
-        }
-      } catch (error) {
-        console.error('Error fetching notifications:', error);
+      if (!storedUserData.userId) {
+        setState(s => ({ ...s, loading: false }));
+        return;
       }
+      setState(s => ({ 
+        ...s, 
+        userData: storedUserData, 
+        profileImage: profileUrl[1], 
+        loading: false 
+      }));
+
+      fetchVideoAndSubtitles(storedUserData.userId);
     };
 
     if (isFocused) {
-      const interval = setInterval(() => {
-        if (navigation.isFocused()) {
-          fetchNotifications(); // Call the function without passing userId
-        }
-      }, 10000); // Poll every 10 seconds
-
-      return () => clearInterval(interval);
+      loadData();
     }
-  }, [isFocused, navigation, userId]); // Dependency on navigation, userId
+  }, [isFocused, fetchVideoAndSubtitles]);
 
   useEffect(() => {
-    const unsubscribeBlur = navigation.addListener('blur', () => {
-      if (videoRef.current) {
-        videoRef.current.setVolume(0); // Mute video when screen loses focus
-        console.log('🔇 Video muted due to navigation');
-      }
-    });
-
-    const unsubscribeFocus = navigation.addListener('focus', () => {
-      if (videoRef.current) {
-        videoRef.current.setVolume(1); // Unmute video when screen gains focus
-        videoRef.current.seek(0); // Seek to the beginning when screen gains focus
-        console.log(
-          '▶️ Video unmuted and seeked to the beginning due to navigation',
-        );
-      }
-    });
-
+    if (videoId && videoUri && audioUri && isFocused && !analysisTriggered.current) {
+      analysisTriggered.current = true;
+      runAnalysis();
+    }
+    // Reset the trigger flag when the component loses focus
     return () => {
-      unsubscribeBlur();
-      unsubscribeFocus();
-    }; // Cleanup when component unmounts
-  }, [navigation]);
-
-  const fetchVideo = async (userId) => {
-    setLoading(true);
-    try {
-      const response = await fetch(`${env.baseURL}/api/videos/user/${userId}`);
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Failed to fetch video.', response.status, errorText);
-        throw new Error(`Failed to fetch video: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const video = data.videoUrl;
-      const videoId = data.id;
-      const thumb = data.thumbnail;  // Corrected from 'tumbnail'
-      const audio = data.audiourl;
-
-      setAudioUri(audio);
-      setThumbnail(thumb);
-      setVideoUri(video);
-
-      // 🔍 Profanity check
-      const videoResponse = await fetch(`${env.baseURL}/api/videos/check-profane`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file: video }),
-      });
-
-      if (videoResponse.status === 403) {
-        Alert.alert('Video unavailable', 'Inappropriate content.', [
-          {
-            text: 'Delete',
-            onPress: () => {
-              deleteVideo(userId);
-              setHasVideo(false);
-              setIsVideoVisible(false);
-            },
-            style: 'destructive',
-          },
-        ]);
-      } else {
-        setHasVideo(true);
-        setIsVideoVisible(true);
-      }
-
-      // 🎧 Audio analysis
-      if (audio?.startsWith('https') && videoId) {
-        const analyzeResponse = await fetch(
-          `${env.baseURL}/api/audio/analyze?userId=${userId}&videoId=${videoId}&filePath=${encodeURIComponent(audio)}`
-        );
-        if (!analyzeResponse.ok) throw new Error('Audio analysis failed');
-        const analysisResult = await analyzeResponse.json();
-        console.log('Audio analysis result:', analysisResult);
-      }
-
-      // 🧠 Facial score analysis
-      if (videoId && video?.startsWith('https')) {
-        const facialScoreResponse = await fetch(
-          `${env.baseURL}/api/facial-score?videoId=${videoId}&url=${encodeURIComponent(video)}`
-        );
-
-        if (facialScoreResponse.ok) {
-          const facialScore = await facialScoreResponse.json();
-          console.log('Facial Score:', facialScore);
-          // Optional: setFacialScore(facialScore);
-        } else {
-          console.warn('Facial score fetch failed.');
+        if (!isFocused) {
+            analysisTriggered.current = false;
         }
-      }
-
-    } catch (error) {
-      console.error('Error fetching video:', error);
-    } finally {
-      setLoading(false);
     }
-  };
-
-
-  const loadDataFromStorage = async () => {
-    try {
-      const apiFirstName = await AsyncStorage.getItem('firstName');
-      const apiIndustry = await AsyncStorage.getItem('industry');
-      const apiUserId = await AsyncStorage.getItem('userId');
-      const apiVideoId = await AsyncStorage.getItem('videoId');
-      const parsedVideoId = apiVideoId ? parseInt(apiVideoId, 10) : null;
-
-      setFirstName(apiFirstName);
-      setIndustry(apiIndustry);
-      setUserId(apiUserId);
-      setVideoId(parsedVideoId);
-
-      fetchVideo(apiUserId);
-      fetchProfilePic(apiUserId);
-    } catch (error) {
-      console.error('Error loading user data from AsyncStorage', error);
-    }
-  };
+  }, [videoId, videoUri, audioUri, isFocused, runAnalysis]);
 
   useEffect(() => {
-    if (isFocused && !videoFetched) {
-      loadDataFromStorage();
-    }
-  }, [isFocused]); // ✅ Clean and no unwanted re-runs
+    const backAction = () => {
+      if (isFocused) {
+        Alert.alert('Exit App', 'Are you sure you want to exit?', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Yes', onPress: () => BackHandler.exitApp() },
+        ]);
+        return true;
+      }
+      return false;
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [isFocused]);
+
+  // --- Render ---
+
+  if (loading) {
+    return (
+      <ImageBackground source={require('./assets/login.jpg')} style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#fff" />
+      </ImageBackground>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <View style={{ flex: 1 }}>
-        <Header
-          profile={profileImage}
-          userName={firstName}
-          jobOption={industry}
-        />
-      </View>
-      <ImageBackground
-        source={require('./assets/login.jpg')}
-        style={styles.imageBackground}>
-        <View style={{ marginTop: '20%' }}></View>
-        <View
-          style={{
-            height: '100%',
-            width: '100%',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}>
-          {loading ? (
-            <ActivityIndicator size="large" color="#000" />
-          ) : isVideoVisible && videoUri ? (
-            // Show the video if it's visible and there's a video URL
-            <TouchableOpacity
-              onPress={() => setModalVisible(true)}
-              style={{
-                height: '80%',
-                width: '100%',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}>
-              <Video
-                ref={videoRef}
-                source={{ uri: videoUri }}
-                style={styles.videoPlayer}
-                resizeMode="contain"
-                automaticallyWaitsToMinimizeStalling={false}
-                controls={true}
-                onProgress={e => setCurrentTime(e.currentTime)} // Track current time
-              />
-              <Text style={styles.subtitle}>{currentSubtitle}</Text>
-            </TouchableOpacity>
-          ) : !hasVideo &&
-            (isNaN(videoId) || videoId === undefined || videoId === null) ? (
-            // Show a message if no video is available1
+    <View style={styles.safeArea}>
+      <ImageBackground source={require('./assets/login.jpg')} style={styles.container}>
+        <Header profile={profileImage} userName={userData?.firstName} />
+        <View style={styles.content}>
+          {hasVideo && videoUri ? (
             <>
-              <Text style={styles.noVideoText1}>
-                You haven’t uploaded your Profile Video yet. {'\n\n'}
-              </Text>
-              <Text style={styles.noVideoText}>
-                Instructions for Recording Your Video: {'\n'}• Hold your mobile
-                in portrait mode. {'\n'}• Ensure your video is at least 30
-                seconds long. {'\n'}• Review your transcription before
-                uploading. {'\n'}• Do not switch to another screen until the
-                upload is complete.
-              </Text>
-              {/* Conditionally render the + icon */}
-              <TouchableOpacity
-                style={styles.plusButton}
-                onPress={() => navigation.navigate('CameraPage', { userId })}>
-                <Text style={styles.plusButtonText}>+</Text>
-              </TouchableOpacity>
+              <VideoPlayer
+                videoUri={videoUri}
+                subtitles={subtitles}
+              />
+              <ActionButtons 
+                onShare={handleShare} 
+                onDelete={handleDeletePress} 
+              />
             </>
           ) : (
-            // Show a message if the video is hidden due to profanity
-            <Text style={styles.noVideoText}></Text>
-          )}
-          {/* Show additional buttons if a video is available */}
-          {hasVideo && (
-            <View style={styles.btnContainer}>
-              <TouchableOpacity
-                style={styles.transcriptionButton}
-                onPress={shareOption}>
-                <Shares
-                  name={'share-social-outline'}
-                  size={28}
-                  style={styles.transcriptionButtonText}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => !isDisabled && deleteVideo(userId)}
-                disabled={isDisabled}>
-                <Delete
-                  name={'delete-empty-outline'}
-                  size={28}
-                  style={styles.deleteButtonText}
-                />
-              </TouchableOpacity>
-            </View>
+            <NoVideoContent
+              onUploadPress={() =>
+                navigation.navigate('CameraPage', {
+                  userId: userData?.userId,
+                  roleCode: userData?.roleCode,
+                  college: userData?.college,
+                })
+              }
+            />
           )}
         </View>
       </ImageBackground>
@@ -583,215 +375,129 @@ const Home1 = () => {
   );
 };
 
+// --- Styles ---
+
 const styles = StyleSheet.create({
-  imageBackground: {
-    flex: 9,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    height: '100%',
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#000',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 25,
   },
   container: {
     flex: 1,
-    // resizeMode: 'contain',
   },
-  videoList: {
-    // paddingLeft: 10,
-    // paddingTop: 10,
-  },
-  videoItem: {
+  loadingContainer: {
     flex: 1,
-    marginTop: '10%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  videoCard: {
+    width: '100%',
+    aspectRatio: 9 / 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#3498db',
   },
   videoPlayer: {
-    height: '110%',
-    borderRadius: 10,
-    width: '90%',
-    marginTop: '10%',
-  },
-  transcriptionButton: {
-    marginTop: -15,
-    backgroundColor: '#2e80d8',
-    padding: 10,
-    borderRadius: 50,
-    marginHorizontal: 10,
-    elevation: 10,
-  },
-  transcriptionButtonText: {
-    color: '#fff',
-    textAlign: 'center',
-  },
-  plusButton: {
-    position: 'absolute',
-    top: '80%',
-    right: '10%',
-    backgroundColor: '#2e80d8',
-    height: 60,
-    width: 60,
-    borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 10,
-  },
-  plusButtonText: {
-    fontSize: 40,
-    color: '#fff',
-  },
-  emptyListText: {
-    textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: 18,
-    marginTop: '100%',
-    color: '#ffffff',
-    elevation: 10,
-  },
-  modalBackground: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-    width: '90%',
-    alignItems: 'center',
-  },
-  modalVideoPlayer: {
     width: '100%',
-    height: 300,
-    borderRadius: 10,
+    height: '100%',
   },
-  closeButton: {
-    backgroundColor: '#2e80d8',
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 10,
-  },
-  closeButtonText: {
-    color: '#fff',
-  },
-  transcriptionText: {
-    textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 10,
-    borderRadius: 5,
-    width: '100%',
-  },
-  transcriptionTitle: {
-    fontWeight: 'bold',
-    marginBottom: 10,
-    fontSize: 18,
-  },
-  updateButton: {
-    backgroundColor: '#2e80d8',
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 10,
-  },
-  updateButtonText: {
-    color: '#fff',
-  },
-  btnctnr: {
-    flex: 1,
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  deleteButton: {
-    marginTop: -15,
-    padding: 10,
-    marginHorizontal: 10,
-    backgroundColor: '#2e80d8',
-    borderRadius: 50,
-    elevation: 10,
-  },
-  deleteButtonText: {
-    color: '#fff',
-    textAlign: 'center',
-  },
-  modelbtn: {
-    flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    width: '100%',
-  },
-  btnContainer: {
-    flexDirection: 'row',
+  playPauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    height: '20%',
   },
-  noVideoText: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'left',
-    marginLeft: '5%',
-    color: '#ffffff',
-  },
-  noVideoText1: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-    color: '#ffffff',
-  },
-
   subtitle: {
-    bottom: '25%',
-    color: 'white',
-    fontSize: 16,
-    padding: 5,
+    position: 'absolute',
+    bottom: 20,
+    left: 15,
+    right: 15,
     textAlign: 'center',
-    zIndex: 10,
-    width: '89%',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    color: 'white',
+    padding: 10,
+    borderRadius: 10,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '80%',
+    marginTop: 25,
+  },
+  actionButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  noVideoContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  noVideoCard: {
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#3498db',
   },
-  buttoncls: {
-    color: '#ffffff',
-    position: 'absolute',
-    top: 15,
-    right: '89%',
-    fontSize: 24,
-    fontWeight: '900',
-  },
-  buttonheart: {
-    position: 'absolute',
-    bottom: 200,
-    right: '5%',
-    color: '#ffffff',
-    paddingRight: 20,
-    fontSize: 30,
-  },
-  buttonphone: {
-    position: 'absolute',
-    bottom: 148,
-    right: '5%',
-    paddingRight: 20,
-    color: '#ffffff',
+  noVideoTitle: {
     fontSize: 22,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 15,
+    textAlign: 'center',
   },
-  buttonmsg: {
-    position: 'absolute',
-    bottom: 90,
-    right: '5%',
-    paddingRight: 20,
-    color: '#ffffff',
-    fontSize: 30,
+  noVideoInstructions: {
+    fontSize: 15,
+    color: '#eee',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 25,
   },
-  count: {
-    position: 'absolute',
-    right: 20,
-    color: '#ffffff',
-    padding: 28,
-    bottom: 155,
-    fontWeight: '900',
+  uploadButton: {
+    backgroundColor: '#3498db',
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#3498db',
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+  },
+  uploadButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
   },
 });
-
 
 export default Home1;
